@@ -241,7 +241,11 @@ static inline double dotVecSum(const Val* __restrict aRow,
     for (; kk < kt8; kk += 8) {
         __m512d va = _mm512_load_pd(aRow + kk);
         __m512d vb = _mm512_load_pd(bRow + kk);
+#if defined(__FMA__)
         acc = _mm512_fmadd_pd(va, vb, acc);
+#else
+        acc = _mm512_add_pd(acc, _mm512_mul_pd(va, vb));
+#endif
     }
     __m256d lo = _mm512_castpd512_pd256(acc);
     __m256d hi = _mm512_extractf64x4_pd(acc, 1);
