@@ -1,3 +1,4 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include "fast_mnist/Matrix.h"
@@ -53,10 +54,10 @@ TEST_CASE("Matrix dot multiplies small matrices", "[matrix]") {
     Matrix c = a.dot(b);
     REQUIRE(c.height() == 2);
     REQUIRE(c.width() == 2);
-    REQUIRE(c[0][0] == Approx(58.0));
-    REQUIRE(c[0][1] == Approx(64.0));
-    REQUIRE(c[1][0] == Approx(139.0));
-    REQUIRE(c[1][1] == Approx(154.0));
+    REQUIRE(c[0][0] == Catch::Approx(58.0));
+    REQUIRE(c[0][1] == Catch::Approx(64.0));
+    REQUIRE(c[1][0] == Catch::Approx(139.0));
+    REQUIRE(c[1][1] == Catch::Approx(154.0));
 }
 
 TEST_CASE("Matrix axpy updates in place", "[matrix]") {
@@ -64,6 +65,6 @@ TEST_CASE("Matrix axpy updates in place", "[matrix]") {
     Matrix y(2, 2, 2.0);
 
     x.axpy(2.0, y);
-    REQUIRE(x[0][0] == Approx(5.0));
-    REQUIRE(x[1][1] == Approx(5.0));
+    REQUIRE(x[0][0] == Catch::Approx(5.0));
+    REQUIRE(x[1][1] == Catch::Approx(5.0));
 }
