@@ -8,6 +8,22 @@
 #include <iostream>
 #include <new>
 
+#if defined(__AVX512F__)
+  #define MATRIX_USE_AVX512 1
+#elif defined(__AVX2__)
+  #define MATRIX_USE_AVX2 1
+#elif defined(__ARM_NEON) || defined(__ARM_NEON__)
+  #define MATRIX_USE_NEON 1
+#else
+  #define MATRIX_USE_SCALAR 1
+#endif
+
+#if MATRIX_USE_AVX512 || MATRIX_USE_AVX2
+  #include <immintrin.h>
+#elif MATRIX_USE_NEON
+  #include <arm_neon.h>
+#endif
+
 
 #include "fast_mnist/Matrix.h"
 
@@ -214,23 +230,74 @@ static inline void dotOuterOne(const Val* __restrict A, const Val* __restrict B,
  * \param[in] colEnd One past last output column in this tile.
  * \param[in] innerDim Shared inner dimension K to accumulate over.
  */
-// SIMD dot product with 4-wide accumulation and scalar tail
-static inline double dotVec4Sum(const Val* __restrict aRow,
-                                const Val* __restrict bRow,
-                                std::size_t kt) {
-    using v4d = double __attribute__((vector_size(32)));
-    v4d acc = {0.0, 0.0, 0.0, 0.0};
+// SIMD dot product with architecture-specific vector width.
+static inline double dotVecSum(const Val* __restrict aRow,
+                               const Val* __restrict bRow,
+                               std::size_t kt) {
+#if MATRIX_USE_AVX512
     std::size_t kk = 0;
-    const std::size_t kt4 = kt & ~std::size_t(3);
-    for (; kk < kt4; kk += 4) {
-        const v4d va = *reinterpret_cast<const v4d*>(aRow + kk);
-        const v4d vb = *reinterpret_cast<const v4d*>(bRow + kk);
-        acc += va * vb;
+    const std::size_t kt8 = kt & ~std::size_t(7);
+    __m512d acc = _mm512_setzero_pd();
+    for (; kk < kt8; kk += 8) {
+        __m512d va = _mm512_load_pd(aRow + kk);
+        __m512d vb = _mm512_load_pd(bRow + kk);
+        acc = _mm512_fmadd_pd(va, vb, acc);
     }
-    const double* ap = reinterpret_cast<const double*>(&acc);
-    double sum = ap[0] + ap[1] + ap[2] + ap[3];
+    __m256d lo = _mm512_castpd512_pd256(acc);
+    __m256d hi = _mm512_extractf64x4_pd(acc, 1);
+    __m256d s = _mm256_add_pd(lo, hi);
+    __m128d l = _mm256_castpd256_pd128(s);
+    __m128d h = _mm256_extractf128_pd(s, 1);
+    __m128d p = _mm_add_pd(l, h);
+    double tmp[2];
+    _mm_storeu_pd(tmp, p);
+    double sum = tmp[0] + tmp[1];
     for (; kk < kt; ++kk) sum += aRow[kk] * bRow[kk];
     return sum;
+#elif MATRIX_USE_AVX2
+    std::size_t kk = 0;
+    const std::size_t kt4 = kt & ~std::size_t(3);
+    __m256d acc = _mm256_setzero_pd();
+    for (; kk < kt4; kk += 4) {
+        __m256d va = _mm256_load_pd(aRow + kk);
+        __m256d vb = _mm256_load_pd(bRow + kk);
+#if defined(__FMA__)
+        acc = _mm256_fmadd_pd(va, vb, acc);
+#else
+        acc = _mm256_add_pd(acc, _mm256_mul_pd(va, vb));
+#endif
+    }
+    __m128d lo = _mm256_castpd256_pd128(acc);
+    __m128d hi = _mm256_extractf128_pd(acc, 1);
+    __m128d sum2 = _mm_add_pd(lo, hi);
+    double tmp[2];
+    _mm_storeu_pd(tmp, sum2);
+    double sum = tmp[0] + tmp[1];
+    for (; kk < kt; ++kk) sum += aRow[kk] * bRow[kk];
+    return sum;
+#elif MATRIX_USE_NEON
+    std::size_t kk = 0;
+    const std::size_t kt2 = kt & ~std::size_t(1);
+    float64x2_t acc = vdupq_n_f64(0.0);
+    for (; kk < kt2; kk += 2) {
+        float64x2_t va = vld1q_f64(aRow + kk);
+        float64x2_t vb = vld1q_f64(bRow + kk);
+#if defined(__ARM_FEATURE_FMA)
+        acc = vfmaq_f64(acc, va, vb);
+#else
+        acc = vmlaq_f64(acc, va, vb);
+#endif
+    }
+    double sum = vgetq_lane_f64(acc, 0) + vgetq_lane_f64(acc, 1);
+    for (; kk < kt; ++kk) sum += aRow[kk] * bRow[kk];
+    return sum;
+#else
+    double sum = 0.0;
+    for (std::size_t kk = 0; kk < kt; ++kk) {
+        sum += aRow[kk] * bRow[kk];
+    }
+    return sum;
+#endif
 }
 
 static inline void gemmTileBlock(const Val* __restrict A,
@@ -250,7 +317,7 @@ static inline void gemmTileBlock(const Val* __restrict A,
             if (k0 == 0) std::fill_n(cRow, cEnd - cBegin, Val(0));
             for (std::size_t j = cBegin; j < cEnd; ++j) {
                 const Val* __restrict bRow = BT + j * ldBT + k0;
-                const double sum = dotVec4Sum(aRow, bRow, kt);
+                const double sum = dotVecSum(aRow, bRow, kt);
                 cRow[j - cBegin] += sum;
             }
         }
