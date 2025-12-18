@@ -4,9 +4,10 @@
  * essentially based on the implementation from Michael Nielsen at
  * http://neuralnetworksanddeeplearning.com/
  *
- * Copyright (C) 2021 raodm@miamiOH.edu
  */
 
+#include <algorithm>
+#include <cassert>
 #include <string>
 #include <fstream>
 #include <vector>
@@ -16,6 +17,7 @@
 #include <chrono>
 #include <unordered_map>
 #include <charconv>
+#include <stdexcept>
 
 #include "NeuralNet.h"
 
@@ -103,7 +105,10 @@ Matrix loadPGM(const std::string& path) {
     const double inv = 1.0 / static_cast<double>(maxVal);
     
     // parse each pixel and write normalized value
-    for (size_t i = 0; i < nPix; ++i) { const int pix = parse_int(p, e); img[i][0] = static_cast<double>(pix) * inv; }
+    for (size_t i = 0; i < nPix; ++i) {
+        const int pix = parseInt(p, e);
+        img[i][0] = static_cast<double>(pix) * inv;
+    }
     
     // store in cache and return reference copy
     auto [it, _] = cache.emplace(path, std::move(img));

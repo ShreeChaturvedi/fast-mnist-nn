@@ -1,5 +1,3 @@
-// Copyright (C) 2021 raodm@miamioh.edu
-
 #ifndef MATRIX_CPP
 #define MATRIX_CPP
 
