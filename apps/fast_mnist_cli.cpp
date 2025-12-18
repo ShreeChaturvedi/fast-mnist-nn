@@ -261,7 +261,7 @@ const Matrix& loadPGM(const std::string& basePath,
  */
 const Matrix& getExpectedDigitOutput(const std::string& path) {
     static const std::array<Matrix, 10> oneHot = []() {
-        std::array<Matrix, 10> labels{};
+        std::array<Matrix, 10> labels;
         for (int d = 0; d < 10; ++d) {
             Matrix m(10, 1, 0.0);
             m[d][0] = 1.0;
