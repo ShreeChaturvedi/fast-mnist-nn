@@ -7,17 +7,21 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <cassert>
-#include <string>
+#include <charconv>
+#include <chrono>
+#include <cstdint>
+#include <filesystem>
 #include <fstream>
-#include <vector>
-#include <random>
 #include <iomanip>
 #include <iostream>
-#include <chrono>
-#include <unordered_map>
-#include <charconv>
+#include <random>
 #include <stdexcept>
+#include <string>
+#include <system_error>
+#include <unordered_map>
+#include <vector>
 
 #include "NeuralNet.h"
 
@@ -31,6 +35,34 @@ static inline std::unordered_map<std::string, Matrix>& imageCache() {
     return cache; 
 }
 
+namespace fs = std::filesystem;
+
+struct PgmBinHeader {
+    std::uint32_t magic;
+    std::uint32_t rows;
+    std::uint32_t cols;
+    std::uint32_t reserved;
+};
+
+constexpr std::uint32_t kPgmBinMagic = 0x4D4E5047;
+
+/**
+ * Skip whitespace and comment lines in a PGM buffer.
+ *
+ * \param[in,out] p Pointer into the buffer.
+ * \param[in] e Pointer to one past the buffer end.
+ */
+static inline void skipSpaceAndComments(const char*& p, const char* e) {
+    while (p < e) {
+        while (p < e && static_cast<unsigned char>(*p) <= ' ') ++p;
+        if (p < e && *p == '#') {
+            while (p < e && *p != '\n') ++p;
+            continue;
+        }
+        break;
+    }
+}
+
 /**
  * Helper method to parse an integer from a string.
  *
@@ -39,12 +71,103 @@ static inline std::unordered_map<std::string, Matrix>& imageCache() {
  * \return The parsed integer.
  */
 static inline int parseInt(const char*& p, const char* e) {
-    while (p < e && static_cast<unsigned char>(*p) <= ' ') ++p;
+    skipSpaceAndComments(p, e);
     int v = 0;
     auto r = std::from_chars(p, e, v);
     if (r.ec != std::errc{}) throw std::runtime_error("PGM parse error");
     p = r.ptr;
     return v;
+}
+
+/**
+ * Convert a relative path into a safe cache file name.
+ *
+ * \param[in] path Relative path to sanitize.
+ * \return Sanitized file name that is safe on common filesystems.
+ */
+static inline std::string sanitizePathForFilename(const std::string& path) {
+    std::string out;
+    out.reserve(path.size());
+    for (char ch : path) {
+        if (ch == '/' || ch == '\\' || ch == ':') {
+            out.push_back('_');
+        } else {
+            out.push_back(ch);
+        }
+    }
+    return out;
+}
+
+/**
+ * Get or create the cache directory under the data root.
+ *
+ * \param[in] basePath The data root directory.
+ * \return Cache directory path as a string.
+ */
+static inline const std::string& cacheDirForBase(
+    const std::string& basePath) {
+    static std::string cachedBase;
+    static std::string cachedDir;
+    if (cachedDir.empty() || cachedBase != basePath) {
+        fs::path dir = fs::path(basePath) / "cache";
+        std::error_code ec;
+        fs::create_directories(dir, ec);
+        if (ec) {
+            throw std::runtime_error("Cache dir error: " + ec.message());
+        }
+        cachedBase = basePath;
+        cachedDir = dir.string();
+    }
+    return cachedDir;
+}
+
+/**
+ * Try to load a normalized image from a binary cache file.
+ *
+ * \param[in] binPath Path to the cache file.
+ * \param[out] img Destination matrix.
+ * \return True if the cache was loaded successfully.
+ */
+static inline bool tryLoadBinaryCache(const std::string& binPath,
+                                      Matrix& img) {
+    std::ifstream file(binPath, std::ios::binary);
+    if (!file) return false;
+
+    PgmBinHeader hdr{};
+    file.read(reinterpret_cast<char*>(&hdr), sizeof(hdr));
+    if (!file || hdr.magic != kPgmBinMagic || hdr.rows == 0 ||
+        hdr.cols == 0) {
+        return false;
+    }
+
+    img = Matrix(hdr.rows, hdr.cols, Matrix::NoInit{});
+    for (std::uint32_t r = 0; r < hdr.rows; ++r) {
+        file.read(reinterpret_cast<char*>(&img[r][0]),
+                  hdr.cols * sizeof(Val));
+    }
+    return static_cast<bool>(file);
+}
+
+/**
+ * Write a normalized image to a binary cache file.
+ *
+ * \param[in] binPath Path to the cache file.
+ * \param[in] img Source matrix.
+ */
+static inline void writeBinaryCache(const std::string& binPath,
+                                    const Matrix& img) {
+    std::ofstream file(binPath, std::ios::binary);
+    if (!file) return;
+
+    PgmBinHeader hdr{};
+    hdr.magic = kPgmBinMagic;
+    hdr.rows = static_cast<std::uint32_t>(img.height());
+    hdr.cols = static_cast<std::uint32_t>(img.width());
+    file.write(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
+    for (std::size_t r = 0; r < img.height(); ++r) {
+        file.write(reinterpret_cast<const char*>(&img[r][0]),
+                   img.width() * sizeof(Val));
+    }
 }
 
 /** Read entire file into a std::string buffer.
@@ -73,45 +196,56 @@ static inline std::string readFileToString(const std::string& path) {
 
 /** Load a PGM image file into a column vector matrix.
  *
- * Parses an ASCII P2 PGM file. Pixels are normalized to the range
- * [0, 1] by dividing by the header max value. Uses a small cache to
- * avoid re-reading the same image repeatedly.
+ * Parses an ASCII P2 PGM file and normalizes pixels to [0, 1]. Uses an
+ * in-memory cache and a small on-disk binary cache to avoid repeated
+ * parsing across runs.
  *
- * \param[in] path Filesystem path to the PGM image file.
- * \return n-by-1 matrix of normalized pixel values (row-major order).
+ * \param[in] basePath Base directory for dataset files.
+ * \param[in] relPath Path relative to basePath.
+ * \return Reference to a cached n-by-1 matrix of pixel values.
  */
-Matrix loadPGM(const std::string& path) {
+const Matrix& loadPGM(const std::string& basePath,
+                      const std::string& relPath) {
+    const fs::path fullPath = fs::path(basePath) / relPath;
+    const std::string fullPathStr = fullPath.string();
     auto& cache = imageCache();
-    // return cached image if already loaded
-    if (auto it = cache.find(path); it != cache.end()) return it->second;
-
-    // read file once into memory
-    std::string buf = readFileToString(path);
-    const char *p = buf.data(), *e = p + buf.size();
-
-    // skip leading whitespace and validate the magic header
-    while (p < e && static_cast<unsigned char>(*p) <= ' ') ++p;
-    if (p + 2 > e || p[0] != 'P' || p[1] != '2') throw std::runtime_error("Unsupported/invalid PGM: " + path);
-    
-    // read header fields: width, height, max pixel value
-    p += 2; 
-    const int width = parseInt(p, e);
-    const int height = parseInt(p, e);
-    const int maxVal = parseInt(p, e);
-
-    // allocate output column vector and compute normalization factor
-    const size_t nPix = static_cast<size_t>(width) * height;
-    Matrix img(nPix, 1, Matrix::NoInit{});
-    const double inv = 1.0 / static_cast<double>(maxVal);
-    
-    // parse each pixel and write normalized value
-    for (size_t i = 0; i < nPix; ++i) {
-        const int pix = parseInt(p, e);
-        img[i][0] = static_cast<double>(pix) * inv;
+    if (auto it = cache.find(fullPathStr); it != cache.end()) {
+        return it->second;
     }
-    
-    // store in cache and return reference copy
-    auto [it, _] = cache.emplace(path, std::move(img));
+
+    const std::string& cacheDir = cacheDirForBase(basePath);
+    const std::string binName = sanitizePathForFilename(relPath) + ".bin";
+    const std::string binPath = (fs::path(cacheDir) / binName).string();
+
+    Matrix img;
+    if (!tryLoadBinaryCache(binPath, img)) {
+        std::string buf = readFileToString(fullPathStr);
+        const char* p = buf.data();
+        const char* e = p + buf.size();
+
+        skipSpaceAndComments(p, e);
+        if (p + 2 > e || p[0] != 'P' || p[1] != '2') {
+            throw std::runtime_error("Unsupported PGM: " + fullPathStr);
+        }
+        p += 2;
+        const int width = parseInt(p, e);
+        const int height = parseInt(p, e);
+        const int maxVal = parseInt(p, e);
+        if (width <= 0 || height <= 0 || maxVal <= 0) {
+            throw std::runtime_error("Invalid PGM header: " + fullPathStr);
+        }
+
+        const size_t nPix = static_cast<size_t>(width) * height;
+        img = Matrix(nPix, 1, Matrix::NoInit{});
+        const double inv = 1.0 / static_cast<double>(maxVal);
+        for (size_t i = 0; i < nPix; ++i) {
+            const int pix = parseInt(p, e);
+            img[i][0] = static_cast<double>(pix) * inv;
+        }
+        writeBinaryCache(binPath, img);
+    }
+
+    auto [it, _] = cache.emplace(fullPathStr, std::move(img));
     return it->second;
 }
 
@@ -125,18 +259,43 @@ Matrix loadPGM(const std::string& path) {
  *
  * \param[in] path The path to the PGM file from where the digit is extracted.
  */
-Matrix getExpectedDigitOutput(const std::string& path) {
-    // Path is of the form .../data/TrainingSet/test-image-6883_0.pgm
-    // We need to get to the last "_n" part and use 'n' as the label.
-    const auto labelPos = path.rfind('_') + 1;
-    // Now we know the index position of the 1-digit label.  Convert
-    // the character to integer for convenience.
-    const int label = path[labelPos] - '0';
-    // Now create the expected matrix with the just the value
-    // corresponding to the label set to 1.0
-    Matrix expected(10, 1, 0.0);
-    expected[label][0] = 1.0;  // Just label should be 1.0
-    return expected;
+const Matrix& getExpectedDigitOutput(const std::string& path) {
+    static const std::array<Matrix, 10> oneHot = []() {
+        std::array<Matrix, 10> labels{};
+        for (int d = 0; d < 10; ++d) {
+            Matrix m(10, 1, 0.0);
+            m[d][0] = 1.0;
+            labels[d] = std::move(m);
+        }
+        return labels;
+    }();
+
+    const auto labelPos = path.rfind('_');
+    if (labelPos == std::string::npos || labelPos + 1 >= path.size()) {
+        throw std::runtime_error("Invalid label path: " + path);
+    }
+    const int label = path[labelPos + 1] - '0';
+    if (label < 0 || label > 9) {
+        throw std::runtime_error("Invalid label digit: " + path);
+    }
+    return oneHot[static_cast<std::size_t>(label)];
+}
+
+/**
+ * Count the number of lines in a text file.
+ *
+ * \param[in] path Path to the file.
+ * \return Number of lines in the file.
+ */
+static inline std::size_t countLines(const std::string& path) {
+    std::ifstream file(path);
+    if (!file) {
+        throw std::runtime_error("Error reading: " + path);
+    }
+    std::size_t lines = 0;
+    std::string line;
+    while (std::getline(file, line)) ++lines;
+    return lines;
 }
 
 /**
@@ -157,8 +316,8 @@ void train(NeuralNet& net, const std::string& path,
            const std::vector<std::string>& fileNames,
            int count = 1e6) {
     for (const auto& imgName : fileNames) {
-        const Matrix img = loadPGM(path + "/" + imgName);
-        const Matrix exp = getExpectedDigitOutput(imgName);
+        const Matrix& img = loadPGM(path, imgName);
+        const Matrix& exp = getExpectedDigitOutput(imgName);
         net.learn(img, exp);
         if (count-- <= 0) {
             break;
@@ -196,9 +355,9 @@ void train(NeuralNet& net, const std::string& path, const int limit = 1e6,
     }
     // Randomly shuffle the list of file names so that we use a random
     // subset of PGM files for training.
-    std::default_random_engine rg;
-    std::shuffle(fileNames.begin(), fileNames.end(),
-                 std::default_random_engine());
+    std::random_device rd;
+    std::default_random_engine rg(rd());
+    std::shuffle(fileNames.begin(), fileNames.end(), rg);
     // Use the helper method to train 
     train(net, path, fileNames, limit);
 }
@@ -246,8 +405,8 @@ void assess(NeuralNet& net, const std::string& path,
     // given given neural network.
     auto passCount = 0, totCount = 0;;
     for (std::string imgName; std::getline(fileList2, imgName); totCount++) {
-        const Matrix img = loadPGM(path + "/" + imgName);
-        const Matrix exp = getExpectedDigitOutput(imgName);
+        const Matrix& img = loadPGM(path, imgName);
+        const Matrix& exp = getExpectedDigitOutput(imgName);
         // Have our network classify the image.
         const Matrix res = net.classify(img);
         assert(res.width() == 1);
@@ -298,6 +457,10 @@ int main(int argc, char *argv[]) {
     const int epochs    = (argc > 3 ? std::stoi(argv[3]) : 10);    
     const std::string trainImgs = (argc > 4 ? argv[4] : "TrainingSetList.txt");
     const std::string testImgs  = (argc > 5 ? argv[5] : "TestingSetList.txt");
+
+    const std::size_t trainListSize = countLines(trainImgs);
+    const std::size_t testListSize = countLines(testImgs);
+    imageCache().reserve(trainListSize + testListSize + 1024);
 
     // Create the neural netowrk
     NeuralNet net({784, 30, 10});
