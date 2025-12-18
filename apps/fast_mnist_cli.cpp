@@ -32,7 +32,7 @@
  */
 static inline std::unordered_map<std::string, Matrix>& imageCache() {
     static std::unordered_map<std::string, Matrix> cache;
-    return cache; 
+    return cache;
 }
 
 namespace fs = std::filesystem;
@@ -54,9 +54,11 @@ constexpr std::uint32_t kPgmBinMagic = 0x4D4E5047;
  */
 static inline void skipSpaceAndComments(const char*& p, const char* e) {
     while (p < e) {
-        while (p < e && static_cast<unsigned char>(*p) <= ' ') ++p;
+        while (p < e && static_cast<unsigned char>(*p) <= ' ')
+            ++p;
         if (p < e && *p == '#') {
-            while (p < e && *p != '\n') ++p;
+            while (p < e && *p != '\n')
+                ++p;
             continue;
         }
         break;
@@ -74,7 +76,8 @@ static inline int parseInt(const char*& p, const char* e) {
     skipSpaceAndComments(p, e);
     int v = 0;
     auto r = std::from_chars(p, e, v);
-    if (r.ec != std::errc{}) throw std::runtime_error("PGM parse error");
+    if (r.ec != std::errc{})
+        throw std::runtime_error("PGM parse error");
     p = r.ptr;
     return v;
 }
@@ -104,8 +107,7 @@ static inline std::string sanitizePathForFilename(const std::string& path) {
  * \param[in] basePath The data root directory.
  * \return Cache directory path as a string.
  */
-static inline const std::string& cacheDirForBase(
-    const std::string& basePath) {
+static inline const std::string& cacheDirForBase(const std::string& basePath) {
     static std::string cachedBase;
     static std::string cachedDir;
     if (cachedDir.empty() || cachedBase != basePath) {
@@ -128,22 +130,20 @@ static inline const std::string& cacheDirForBase(
  * \param[out] img Destination matrix.
  * \return True if the cache was loaded successfully.
  */
-static inline bool tryLoadBinaryCache(const std::string& binPath,
-                                      Matrix& img) {
+static inline bool tryLoadBinaryCache(const std::string& binPath, Matrix& img) {
     std::ifstream file(binPath, std::ios::binary);
-    if (!file) return false;
+    if (!file)
+        return false;
 
     PgmBinHeader hdr{};
     file.read(reinterpret_cast<char*>(&hdr), sizeof(hdr));
-    if (!file || hdr.magic != kPgmBinMagic || hdr.rows == 0 ||
-        hdr.cols == 0) {
+    if (!file || hdr.magic != kPgmBinMagic || hdr.rows == 0 || hdr.cols == 0) {
         return false;
     }
 
     img = Matrix(hdr.rows, hdr.cols, Matrix::NoInit{});
     for (std::uint32_t r = 0; r < hdr.rows; ++r) {
-        file.read(reinterpret_cast<char*>(&img[r][0]),
-                  hdr.cols * sizeof(Val));
+        file.read(reinterpret_cast<char*>(&img[r][0]), hdr.cols * sizeof(Val));
     }
     return static_cast<bool>(file);
 }
@@ -157,7 +157,8 @@ static inline bool tryLoadBinaryCache(const std::string& binPath,
 static inline void writeBinaryCache(const std::string& binPath,
                                     const Matrix& img) {
     std::ofstream file(binPath, std::ios::binary);
-    if (!file) return;
+    if (!file)
+        return;
 
     PgmBinHeader hdr{};
     hdr.magic = kPgmBinMagic;
@@ -181,8 +182,9 @@ static inline void writeBinaryCache(const std::string& binPath,
 static inline std::string readFileToString(const std::string& path) {
     // open file once in binary mode
     std::ifstream file(path, std::ios::binary);
-    if (!file) throw std::runtime_error("Unable to read " + path);
-    
+    if (!file)
+        throw std::runtime_error("Unable to read " + path);
+
     // get file size and allocate exact buffer
     file.seekg(0, std::ios::end);
     const auto sz = static_cast<size_t>(file.tellg());
@@ -190,7 +192,8 @@ static inline std::string readFileToString(const std::string& path) {
     std::string buf(sz, '\0');
 
     // read all bytes into the buffer
-    if (sz) file.read(buf.data(), buf.size());
+    if (sz)
+        file.read(buf.data(), buf.size());
     return buf;
 }
 
@@ -204,8 +207,7 @@ static inline std::string readFileToString(const std::string& path) {
  * \param[in] relPath Path relative to basePath.
  * \return Reference to a cached n-by-1 matrix of pixel values.
  */
-const Matrix& loadPGM(const std::string& basePath,
-                      const std::string& relPath) {
+const Matrix& loadPGM(const std::string& basePath, const std::string& relPath) {
     const fs::path fullPath = fs::path(basePath) / relPath;
     const std::string fullPathStr = fullPath.string();
     auto& cache = imageCache();
@@ -294,7 +296,8 @@ static inline std::size_t countLines(const std::string& path) {
     }
     std::size_t lines = 0;
     std::string line;
-    while (std::getline(file, line)) ++lines;
+    while (std::getline(file, line))
+        ++lines;
     return lines;
 }
 
@@ -306,15 +309,14 @@ static inline std::size_t countLines(const std::string& path) {
  *
  * \param[in] path The prefix path to the location where the training
  * images are actually stored.
- * 
+ *
  * \param[in] fileNames The list of PGM image file names to be used
  * for training.
  *
  * \param[in] count The number of files in this list ot be used.
  */
 void train(NeuralNet& net, const std::string& path,
-           const std::vector<std::string>& fileNames,
-           int count = 1e6) {
+           const std::vector<std::string>& fileNames, int count = 1e6) {
     for (const auto& imgName : fileNames) {
         const Matrix& img = loadPGM(path, imgName);
         const Matrix& exp = getExpectedDigitOutput(imgName);
@@ -349,8 +351,8 @@ void train(NeuralNet& net, const std::string& path, const int limit = 1e6,
     std::vector<std::string> fileNames;
     int count = 0;
     // Load the data from the given image file list.
-    for (std::string imgName; std::getline(fileList, imgName) &&
-             count < limit; count++) {
+    for (std::string imgName; std::getline(fileList, imgName) && count < limit;
+         count++) {
         fileNames.push_back(imgName);
     }
     // Randomly shuffle the list of file names so that we use a random
@@ -358,7 +360,7 @@ void train(NeuralNet& net, const std::string& path, const int limit = 1e6,
     std::random_device rd;
     std::default_random_engine rg(rd());
     std::shuffle(fileNames.begin(), fileNames.end(), rg);
-    // Use the helper method to train 
+    // Use the helper method to train
     train(net, path, fileNames, limit);
 }
 
@@ -377,7 +379,10 @@ int maxElemIndexCol(const Matrix& col) {
     Val bestVal = col[0][0];
     for (std::size_t r = 1; r < col.height(); ++r) {
         const Val v = col[r][0];
-        if (v > bestVal) { bestVal = v; best = r; }
+        if (v > bestVal) {
+            bestVal = v;
+            best = r;
+        }
     }
     return best;
 }
@@ -390,7 +395,7 @@ int maxElemIndexCol(const Matrix& col) {
  *
  * \param[in] path The prefix path to the location where the training
  * images are actually stored.
- * 
+ *
  * \param[in] imgFileList A text file containing the list of
  * image-file-names to be used for assessing the effectiveness of the
  * supplied \c net.
@@ -403,7 +408,8 @@ void assess(NeuralNet& net, const std::string& path,
     }
     // Check how many of the images are correctly classified by the
     // given given neural network.
-    auto passCount = 0, totCount = 0;;
+    auto passCount = 0, totCount = 0;
+    ;
     for (std::string imgName; std::getline(fileList2, imgName); totCount++) {
         const Matrix& img = loadPGM(path, imgName);
         const Matrix& exp = getExpectedDigitOutput(imgName);
@@ -436,7 +442,7 @@ void assess(NeuralNet& net, const std::string& path,
  *     1. The path where training and test images are stored.
  *     2. The first argument is assumed to be the number of images to
  *        be used.
- *     3. Number of ephocs to be used for training. Default is 30. 
+ *     3. Number of ephocs to be used for training. Default is 30.
  *     4. The file containing the list of training images to be
  *        used. By default this parameter is set to
  *        "TrainingSetList.txt".
@@ -444,7 +450,7 @@ void assess(NeuralNet& net, const std::string& path,
  *        used. By default this parameter is set to
  *        "TestingSetList.txt".
  */
-int main(int argc, char *argv[]) {
+int main(int argc, char* argv[]) {
     // We definitely need 1 argument for the base-path where image
     // files are stored.
     if (argc < 2) {
@@ -453,10 +459,10 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     // Process optional command-line arguments or use default values.
-    const int imgCount  = (argc > 2 ? std::stoi(argv[2]) : 5000);
-    const int epochs    = (argc > 3 ? std::stoi(argv[3]) : 10);    
+    const int imgCount = (argc > 2 ? std::stoi(argv[2]) : 5000);
+    const int epochs = (argc > 3 ? std::stoi(argv[3]) : 10);
     const std::string trainImgs = (argc > 4 ? argv[4] : "TrainingSetList.txt");
-    const std::string testImgs  = (argc > 5 ? argv[5] : "TestingSetList.txt");
+    const std::string testImgs = (argc > 5 ? argv[5] : "TestingSetList.txt");
 
     const std::size_t trainListSize = countLines(trainImgs);
     const std::size_t testListSize = countLines(testImgs);

@@ -1,38 +1,40 @@
 #ifndef MATRIX_CPP
 #define MATRIX_CPP
 
-#include <cassert>
 #include <algorithm>
+#include <cassert>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <new>
 
 #if defined(__AVX512F__)
-  #define MATRIX_USE_AVX512 1
+#define MATRIX_USE_AVX512 1
 #elif defined(__AVX2__)
-  #define MATRIX_USE_AVX2 1
+#define MATRIX_USE_AVX2 1
 #elif defined(__ARM_NEON) || defined(__ARM_NEON__)
-  #define MATRIX_USE_NEON 1
+#define MATRIX_USE_NEON 1
 #else
-  #define MATRIX_USE_SCALAR 1
+#define MATRIX_USE_SCALAR 1
 #endif
 
 #if MATRIX_USE_AVX512 || MATRIX_USE_AVX2
-  #include <immintrin.h>
+#include <immintrin.h>
 #elif MATRIX_USE_NEON
-  #include <arm_neon.h>
+#include <arm_neon.h>
 #endif
-
 
 #include "fast_mnist/Matrix.h"
 
-
 /** Allocate 64B-aligned storage and compute padded leading dimension. */
 void Matrix::allocate() {
-    if (rows_ == 0 || cols_ == 0) { data_ = nullptr; ld_ = 0; return; }
+    if (rows_ == 0 || cols_ == 0) {
+        data_ = nullptr;
+        ld_ = 0;
+        return;
+    }
     static constexpr std::size_t AlignBytes = 64;
-    static constexpr std::size_t AlignElem  = AlignBytes / sizeof(Val);
+    static constexpr std::size_t AlignElem = AlignBytes / sizeof(Val);
     ld_ = (cols_ == 1) ? 1 : ((cols_ + (AlignElem - 1)) & ~(AlignElem - 1));
     void* p = nullptr;
     if (::posix_memalign(&p, AlignBytes, sizeof(Val) * rows_ * ld_) != 0 || !p)
@@ -49,58 +51,60 @@ void Matrix::deallocate() {
 /** Copy constructor: deep-copies data honoring per-matrix leading dimension. */
 Matrix::Matrix(const Matrix& other)
     : rows_(other.rows_), cols_(other.cols_), ld_(0), data_(nullptr) {
-    allocate();  // sets padded ld_ for *this*
-    if (rows_ == 0 || cols_ == 0) return;
+    allocate(); // sets padded ld_ for *this*
+    if (rows_ == 0 || cols_ == 0)
+        return;
 
     if (ld_ == other.ld_) {
         std::memcpy(data_, other.data_, rows_ * ld_ * sizeof(Val));
     } else {
         for (std::size_t r = 0; r < rows_; ++r) {
-            std::memcpy(data_ + r*ld_, other.data_ + r*other.ld_,
+            std::memcpy(data_ + r * ld_, other.data_ + r * other.ld_,
                         cols_ * sizeof(Val));
         }
     }
 }
 
-
 /** Move constructor: transfers ownership without allocation or copy. */
 Matrix::Matrix(Matrix&& other) noexcept
     : rows_(other.rows_), cols_(other.cols_), ld_(other.ld_),
-        data_(other.data_) {
+      data_(other.data_) {
     other.rows_ = other.cols_ = other.ld_ = 0;
     other.data_ = nullptr;
 }
 
 /** Copy assignment: resizes as needed and deep-copies data. */
 Matrix& Matrix::operator=(const Matrix& other) {
-    if (this == &other) return *this;
+    if (this == &other)
+        return *this;
 
     // Compute padded ld for target dims
     static constexpr std::size_t AlignElem = 64 / sizeof(Val);
-    const std::size_t want_ld = (other.cols_ + (AlignElem - 1))
-                                & ~(AlignElem - 1);  // padded ld
+    const std::size_t want_ld =
+        (other.cols_ + (AlignElem - 1)) & ~(AlignElem - 1); // padded ld
 
-    const bool need_realloc = (rows_ != other.rows_) || (cols_ != other.cols_) 
-                              || (ld_ != want_ld);
+    const bool need_realloc =
+        (rows_ != other.rows_) || (cols_ != other.cols_) || (ld_ != want_ld);
 
     if (need_realloc) {
         deallocate();
         rows_ = other.rows_;
         cols_ = other.cols_;
         ld_ = 0;
-        allocate(); 
+        allocate();
     } else {
         rows_ = other.rows_;
         cols_ = other.cols_;
-    }  // ld_ unchanged
+    } // ld_ unchanged
 
-    if (rows_ == 0 || cols_ == 0) return *this;
+    if (rows_ == 0 || cols_ == 0)
+        return *this;
 
-    if (ld_ == other.ld_) {  // fast path for same ld_
+    if (ld_ == other.ld_) { // fast path for same ld_
         std::memcpy(data_, other.data_, rows_ * ld_ * sizeof(Val));
     } else {
-        for (std::size_t r = 0; r < rows_; ++r) {  // slow path if different ld_
-            std::memcpy(data_ + r*ld_, other.data_ + r * other.ld_,
+        for (std::size_t r = 0; r < rows_; ++r) { // slow path if different ld_
+            std::memcpy(data_ + r * ld_, other.data_ + r * other.ld_,
                         cols_ * sizeof(Val));
         }
     }
@@ -111,7 +115,9 @@ Matrix& Matrix::operator=(const Matrix& other) {
 Matrix& Matrix::operator=(Matrix&& other) noexcept {
     if (this != &other) {
         deallocate();
-        rows_ = other.rows_; cols_ = other.cols_; ld_ = other.ld_;
+        rows_ = other.rows_;
+        cols_ = other.cols_;
+        ld_ = other.ld_;
         data_ = other.data_;
         other.rows_ = other.cols_ = other.ld_ = 0;
         other.data_ = nullptr;
@@ -160,18 +166,18 @@ std::istream& operator>>(std::istream& is, Matrix& matrix) {
     return is;
 }
 
-
 /** Construct an uninitialized matrix of size row×col. */
 Matrix::Matrix(std::size_t row, std::size_t col, NoInit)
     : rows_(row), cols_(col), ld_(0), data_(nullptr) {
-    allocate();  // sets ld_ with 64B padding and posix_memalign(64,...)
+    allocate(); // sets ld_ with 64B padding and posix_memalign(64,...)
 }
 
 /** Construct and initialize all elements to initVal. */
 Matrix::Matrix(std::size_t row, std::size_t col, Val initVal)
     : rows_(row), cols_(col), ld_(0), data_(nullptr) {
-    allocate();  // sets padded ld_ and 64B-aligned data_
-    if (rows_ == 0 || cols_ == 0) return;
+    allocate(); // sets padded ld_ and 64B-aligned data_
+    if (rows_ == 0 || cols_ == 0)
+        return;
 
     if (initVal == Val(0)) {
         // fastest for zero: one bulk memset (padding included)
@@ -180,7 +186,8 @@ Matrix::Matrix(std::size_t row, std::size_t col, Val initVal)
         // only initialize logical cols, leave padded tail alone
         for (std::size_t r = 0; r < rows_; ++r) {
             Val* dst = data_ + r * ld_;
-            for (std::size_t c = 0; c < cols_; ++c) dst[c] = initVal;
+            for (std::size_t c = 0; c < cols_; ++c)
+                dst[c] = initVal;
         }
     }
 }
@@ -200,14 +207,16 @@ Matrix::Matrix(std::size_t row, std::size_t col, Val initVal)
  * \param[in] ldC Leading dimension of C.
  */
 static inline void dotOuterOne(const Val* __restrict A, const Val* __restrict B,
-    Val* __restrict C, std::size_t rows, std::size_t cols, std::size_t ldA,
-    std::size_t ldC) {
+                               Val* __restrict C, std::size_t rows,
+                               std::size_t cols, std::size_t ldA,
+                               std::size_t ldC) {
     for (std::size_t i = 0; i < rows; ++i) {
         // get the scalar from this input row
         const Val aScale = A[i * ldA];
         // write scaled row into the output
         Val* outRow = C + i * ldC;
-        for (std::size_t j = 0; j < cols; ++j) outRow[j] = aScale * B[j];
+        for (std::size_t j = 0; j < cols; ++j)
+            outRow[j] = aScale * B[j];
     }
 }
 
@@ -232,8 +241,7 @@ static inline void dotOuterOne(const Val* __restrict A, const Val* __restrict B,
  */
 // SIMD dot product with architecture-specific vector width.
 static inline double dotVecSum(const Val* __restrict aRow,
-                               const Val* __restrict bRow,
-                               std::size_t kt) {
+                               const Val* __restrict bRow, std::size_t kt) {
 #if MATRIX_USE_AVX512
     std::size_t kk = 0;
     const std::size_t kt8 = kt & ~std::size_t(7);
@@ -256,7 +264,8 @@ static inline double dotVecSum(const Val* __restrict aRow,
     double tmp[2];
     _mm_storeu_pd(tmp, p);
     double sum = tmp[0] + tmp[1];
-    for (; kk < kt; ++kk) sum += aRow[kk] * bRow[kk];
+    for (; kk < kt; ++kk)
+        sum += aRow[kk] * bRow[kk];
     return sum;
 #elif MATRIX_USE_AVX2
     std::size_t kk = 0;
@@ -277,7 +286,8 @@ static inline double dotVecSum(const Val* __restrict aRow,
     double tmp[2];
     _mm_storeu_pd(tmp, sum2);
     double sum = tmp[0] + tmp[1];
-    for (; kk < kt; ++kk) sum += aRow[kk] * bRow[kk];
+    for (; kk < kt; ++kk)
+        sum += aRow[kk] * bRow[kk];
     return sum;
 #elif MATRIX_USE_NEON
     std::size_t kk = 0;
@@ -293,7 +303,8 @@ static inline double dotVecSum(const Val* __restrict aRow,
 #endif
     }
     double sum = vgetq_lane_f64(acc, 0) + vgetq_lane_f64(acc, 1);
-    for (; kk < kt; ++kk) sum += aRow[kk] * bRow[kk];
+    for (; kk < kt; ++kk)
+        sum += aRow[kk] * bRow[kk];
     return sum;
 #else
     double sum = 0.0;
@@ -305,20 +316,19 @@ static inline double dotVecSum(const Val* __restrict aRow,
 }
 
 static inline void gemmTileBlock(const Val* __restrict A,
-                                 const Val* __restrict BT,
-                                 Val* __restrict C,
+                                 const Val* __restrict BT, Val* __restrict C,
                                  std::size_t ldA, std::size_t ldBT,
-                                 std::size_t ldC,
-                                 std::size_t rBegin, std::size_t rEnd,
-                                 std::size_t cBegin, std::size_t cEnd,
-                                 std::size_t innerDim) {
+                                 std::size_t ldC, std::size_t rBegin,
+                                 std::size_t rEnd, std::size_t cBegin,
+                                 std::size_t cEnd, std::size_t innerDim) {
     // walk K in tiles to keep hot data in cache
     for (std::size_t k0 = 0; k0 < innerDim; k0 += 128) {
         const std::size_t kt = std::min(innerDim, k0 + 128) - k0;
         for (std::size_t i = rBegin; i < rEnd; ++i) {
             const Val* __restrict aRow = A + i * ldA + k0;
-            Val*       __restrict cRow = C + i * ldC + cBegin;
-            if (k0 == 0) std::fill_n(cRow, cEnd - cBegin, Val(0));
+            Val* __restrict cRow = C + i * ldC + cBegin;
+            if (k0 == 0)
+                std::fill_n(cRow, cEnd - cBegin, Val(0));
             for (std::size_t j = cBegin; j < cEnd; ++j) {
                 const Val* __restrict bRow = BT + j * ldBT + k0;
                 const double sum = dotVecSum(aRow, bRow, kt);
@@ -330,7 +340,7 @@ static inline void gemmTileBlock(const Val* __restrict A,
 
 /**
  * Performs DGEMM using blocked matrix multiplication.
- * 
+ *
  * \param[in] rhs The other matrix to be used.  This matrix must
  * have the same number of rows as the number of columns in this
  * matrix.  Otherwise this method throws an excpetion.
@@ -338,26 +348,29 @@ static inline void gemmTileBlock(const Val* __restrict A,
  * \return The resulting matrix in which each value has been
  * computed by multiplying the corresponding values from \c this
  * and rhs.
- * 
+ *
  */
 Matrix Matrix::dot(const Matrix& rhs) const {
     assert(cols_ == rhs.rows_);
     Matrix result(rows_, rhs.cols_, Matrix::NoInit{});
-    if (!rows_ || !cols_ || !rhs.cols_) return result;
-    if (cols_ == 1) { dotOuterOne(data_, rhs.data_, result.data_, rows_, 
-        rhs.cols_, ld_, result.ld_); return result; }
+    if (!rows_ || !cols_ || !rhs.cols_)
+        return result;
+    if (cols_ == 1) {
+        dotOuterOne(data_, rhs.data_, result.data_, rows_, rhs.cols_, ld_,
+                    result.ld_);
+        return result;
+    }
     Matrix BT = rhs.transpose();
     constexpr std::size_t BI = 64, BJ = 64;
 #if defined(FAST_MNIST_USE_OPENMP)
-#pragma omp parallel for schedule(static) \
-    if (rows_ * rhs.cols_ >= 4096)
+#pragma omp parallel for schedule(static) if (rows_ * rhs.cols_ >= 4096)
 #endif
     for (std::size_t i0 = 0; i0 < rows_; i0 += BI) {
         const std::size_t iMax = std::min(rows_, i0 + BI);
         for (std::size_t j0 = 0; j0 < rhs.cols_; j0 += BJ) {
             const std::size_t jMax = std::min(rhs.cols_, j0 + BJ);
             gemmTileBlock(data_, BT.data_, result.data_, ld_, BT.ld_,
-                            result.ld_, i0, iMax, j0, jMax, cols_);
+                          result.ld_, i0, iMax, j0, jMax, cols_);
         }
     }
     return result;
@@ -378,34 +391,44 @@ Matrix Matrix::dot(const Matrix& rhs) const {
  * \param[in] colBegin First source column in the tile.
  * \param[in] colEnd One past last source column in the tile.
  */
-static inline void transposeTileCopy(const Val* __restrict src, 
-    Val* __restrict dst, std::size_t lda, std::size_t ldb, std::size_t rowBegin,
-    std::size_t rowEnd, std::size_t colBegin, std::size_t colEnd) {
+static inline void transposeTileCopy(const Val* __restrict src,
+                                     Val* __restrict dst, std::size_t lda,
+                                     std::size_t ldb, std::size_t rowBegin,
+                                     std::size_t rowEnd, std::size_t colBegin,
+                                     std::size_t colEnd) {
     for (std::size_t col = colBegin; col < colEnd; ++col) {
         // set pointers to the input column and output row
         const Val* __restrict s = src + rowBegin * lda + col;
-        Val*       __restrict d = dst + col * ldb + rowBegin;
+        Val* __restrict d = dst + col * ldb + rowBegin;
         std::size_t r = rowBegin;
         // unroll by four to cut loop overhead on contiguous stores
-        const std::size_t rEnd4 = rowBegin + ((rowEnd - rowBegin) 
-                                    & ~std::size_t(3));
+        const std::size_t rEnd4 =
+            rowBegin + ((rowEnd - rowBegin) & ~std::size_t(3));
         for (; r < rEnd4; r += 4) {
-            d[0] = s[0 * lda]; d[1] = s[1 * lda];
-            d[2] = s[2 * lda]; d[3] = s[3 * lda];
-            s += 4 * lda; d += 4;
+            d[0] = s[0 * lda];
+            d[1] = s[1 * lda];
+            d[2] = s[2 * lda];
+            d[3] = s[3 * lda];
+            s += 4 * lda;
+            d += 4;
         }
         // finish any remaining rows in this tile
-        for (; r < rowEnd; ++r) { *d++ = *s; s += lda; }
+        for (; r < rowEnd; ++r) {
+            *d++ = *s;
+            s += lda;
+        }
     }
 }
 
 /** Return a transposed copy of this matrix using blocked copies. */
 Matrix Matrix::transpose() const {
-    if (rows_ == 0 || cols_ == 0) return *this;
+    if (rows_ == 0 || cols_ == 0)
+        return *this;
     Matrix out(cols_, rows_, Matrix::NoInit{});
     const std::size_t srcRows = rows_, srcCols = cols_;
     const std::size_t lda = ld_, ldb = out.ld_;
-    const Val* __restrict src = data_; Val* __restrict dst = out.data_;
+    const Val* __restrict src = data_;
+    Val* __restrict dst = out.data_;
 
     // fast paths for vector shapes
     if (srcRows == 1) {
@@ -419,8 +442,8 @@ Matrix Matrix::transpose() const {
     // blocked transpose with contiguous stores on destination
     constexpr std::size_t TileSize = 32;
 #if defined(FAST_MNIST_USE_OPENMP)
-#pragma omp parallel for collapse(2) schedule(static) \
-    if (srcRows * srcCols >= 4096)
+#pragma omp parallel for collapse(2)                                           \
+    schedule(static) if (srcRows * srcCols >= 4096)
 #endif
     for (std::size_t col0 = 0; col0 < srcCols; col0 += TileSize) {
         const std::size_t colEnd = std::min(srcCols, col0 + TileSize);
@@ -434,15 +457,17 @@ Matrix Matrix::transpose() const {
 
 /** In-place AXPY: this += alpha * X. */
 void Matrix::axpy(Val alpha, const Matrix& X) {
-    if (rows_ == 0 || cols_ == 0 || alpha == Val(0)) return;
+    if (rows_ == 0 || cols_ == 0 || alpha == Val(0))
+        return;
 #if defined(FAST_MNIST_USE_OPENMP)
 #pragma omp parallel for schedule(static) if (rows_ * cols_ >= 4096)
 #endif
     for (std::size_t r = 0; r < rows_; ++r) {
         Val* dst = data_ + r * ld_;
         const Val* src = X.data_ + r * X.ld_;
-        for (std::size_t c = 0; c < cols_; ++c) dst[c] += alpha * src[c];
+        for (std::size_t c = 0; c < cols_; ++c)
+            dst[c] += alpha * src[c];
     }
-} 
+}
 
 #endif

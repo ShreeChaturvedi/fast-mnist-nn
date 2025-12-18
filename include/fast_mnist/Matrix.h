@@ -7,10 +7,10 @@
 
 */
 
-#include <iosfwd>
-#include <vector>
 #include <cassert>
 #include <cstddef>
+#include <iosfwd>
+#include <vector>
 
 /** Shortcut for the value of each element in the matrix */
 using Val = double;
@@ -27,7 +27,7 @@ using Val = double;
 
     <li> Stream insertion and extraction operators to conveniently
     load and print values.</li>
-    
+
     </ul>
 */
 class Matrix {
@@ -65,7 +65,7 @@ class Matrix {
      */
     friend std::istream& operator>>(std::istream& is, Matrix& matrix);
 
-public:
+  public:
     /** Perform the in-place AXPY operation on this matrix.
      *
      * Computes *this += alpha * X for matrices of identical
@@ -116,7 +116,7 @@ public:
      * \return Returns the height or number of rows in this matrix.
      */
     std::size_t height() const {
-        return rows_; 
+        return rows_;
     }
 
     /**
@@ -129,8 +129,10 @@ public:
     }
 
     /** Returns true if this matrix has no elements. */
-    bool empty() const { return (rows_ == 0 || cols_ == 0); }
-    
+    bool empty() const {
+        return (rows_ == 0 || cols_ == 0);
+    }
+
     /**
      * Creates a new matrix in which each value is obtained by
      * applying a given unary operator to each entry in the matrix.
@@ -138,9 +140,10 @@ public:
      * \param[in] operation The unary operation to be used to create
      * the given matrix.
      */
-    template<typename UnaryOp>
-    Matrix apply(const UnaryOp& operation) const {
-        if (empty()) { return *this; }
+    template <typename UnaryOp> Matrix apply(const UnaryOp& operation) const {
+        if (empty()) {
+            return *this;
+        }
         Matrix result(rows_, cols_, NoInit{});
         for (std::size_t r = 0; r < rows_; ++r) {
             const Val* src = data_ + r * ld_;
@@ -163,16 +166,18 @@ public:
      *
      * \param[in] operation The binary operation to be used to create
      * each value in the given matrix.
-     */    
-    template<typename BinaryOp>
+     */
+    template <typename BinaryOp>
     Matrix apply(const Matrix& other, const BinaryOp& operation) const {
         assert(height() == other.height() && width() == other.width());
-        if (empty()) { return *this; }
+        if (empty()) {
+            return *this;
+        }
         Matrix result(rows_, cols_, NoInit{});
         for (std::size_t r = 0; r < rows_; ++r) {
-            const Val* a = data_       + r * ld_;
+            const Val* a = data_ + r * ld_;
             const Val* b = other.data_ + r * other.ld_;
-            Val*       c = result.data_+ r * result.ld_;
+            Val* c = result.data_ + r * result.ld_;
             for (std::size_t col = 0; col < cols_; ++col) {
                 c[col] = operation(a[col], b[col]);
             }
@@ -192,8 +197,8 @@ public:
      * rhs.
      */
     Matrix operator+(const Matrix& rhs) const {
-        return apply(rhs, [](const auto& v1, const auto& v2) {
-                              return v1 + v2; });
+        return apply(rhs,
+                     [](const auto& v1, const auto& v2) { return v1 + v2; });
     }
 
     /**
@@ -209,8 +214,8 @@ public:
      * and rhs.
      */
     Matrix operator*(const Matrix& rhs) const {
-        return apply(rhs, [](const auto& v1, const auto& v2) {
-                              return v1 * v2; });
+        return apply(rhs,
+                     [](const auto& v1, const auto& v2) { return v1 * v2; });
     }
 
     /**
@@ -228,7 +233,7 @@ public:
     Matrix operator*(const Val val) const {
         return apply([val](const auto& v) { return v * val; });
     }
-    
+
     /**
      * Operator to subtract two matrices with the same dimensions.
      *
@@ -241,10 +246,10 @@ public:
      * and rhs.
      */
     Matrix operator-(const Matrix& rhs) const {
-        return apply(rhs, [](const auto& v1, const auto& v2)  {
-                              return v1 - v2; });
+        return apply(rhs,
+                     [](const auto& v1, const auto& v2) { return v1 - v2; });
     }
-    
+
     /**
      * Performs the dot product of two matrices. This method has a
      * O(n^3) time complexity.
@@ -264,53 +269,85 @@ public:
      */
     Matrix transpose() const;
 
-struct Row {
-    Val* p;
-    std::size_t n;
-    inline Val& operator[](std::size_t c) noexcept { return p[c]; }
-    inline const Val& operator[](std::size_t c) const noexcept { return p[c]; }
-    inline Val* data() noexcept { return p; }
-    inline const Val* data() const noexcept { return p; }
-    inline std::size_t size() const noexcept { return n; }
-    inline Val* begin() noexcept { return p; }
-    inline Val* end()   noexcept { return p + n; }
-    inline const Val* begin() const noexcept { return p; }
-    inline const Val* end()   const noexcept { return p + n; }
-    operator std::vector<Val>() const { return std::vector<Val>(p, p + n); }
-};
+    struct Row {
+        Val* p;
+        std::size_t n;
+        inline Val& operator[](std::size_t c) noexcept {
+            return p[c];
+        }
+        inline const Val& operator[](std::size_t c) const noexcept {
+            return p[c];
+        }
+        inline Val* data() noexcept {
+            return p;
+        }
+        inline const Val* data() const noexcept {
+            return p;
+        }
+        inline std::size_t size() const noexcept {
+            return n;
+        }
+        inline Val* begin() noexcept {
+            return p;
+        }
+        inline Val* end() noexcept {
+            return p + n;
+        }
+        inline const Val* begin() const noexcept {
+            return p;
+        }
+        inline const Val* end() const noexcept {
+            return p + n;
+        }
+        operator std::vector<Val>() const {
+            return std::vector<Val>(p, p + n);
+        }
+    };
 
-struct CRow {
-    const Val* p;
-    std::size_t n;
-    inline const Val& operator[](std::size_t c) const noexcept { return p[c]; }
-    inline const Val* data() const noexcept { return p; }
-    inline std::size_t size() const noexcept { return n; }
-    inline const Val* begin() const noexcept { return p; }
-    inline const Val* end()   const noexcept { return p + n; }
-    operator std::vector<Val>() const { return std::vector<Val>(p, p + n); }
-};
+    struct CRow {
+        const Val* p;
+        std::size_t n;
+        inline const Val& operator[](std::size_t c) const noexcept {
+            return p[c];
+        }
+        inline const Val* data() const noexcept {
+            return p;
+        }
+        inline std::size_t size() const noexcept {
+            return n;
+        }
+        inline const Val* begin() const noexcept {
+            return p;
+        }
+        inline const Val* end() const noexcept {
+            return p + n;
+        }
+        operator std::vector<Val>() const {
+            return std::vector<Val>(p, p + n);
+        }
+    };
 
     /**
      * Returns a row of the matrix as a Row object.
-     * 
+     *
      * \param[in] r The row index to be returned.
      * \return A Row object representing the specified row.
      */
-    inline Row  operator[](std::size_t r) noexcept {
-        return Row { data_ + r * ld_, cols_ }; 
+    inline Row operator[](std::size_t r) noexcept {
+        return Row{data_ + r * ld_, cols_};
     }
 
     /**
      * Returns a row of the matrix as a CRow object.
-     * 
+     *
      * \param[in] r The row index to be returned.
      * \return A CRow object representing the specified row.
      */
     inline CRow operator[](std::size_t r) const noexcept {
-        return CRow{ data_ + r * ld_, cols_ };
+        return CRow{data_ + r * ld_, cols_};
     }
 
-private:
+  private:
     /**
      * The number of rows, columns, and leading dimension of the matrix.
      */
@@ -331,10 +368,10 @@ private:
      */
     void deallocate();
 
-public:
+  public:
     /**
      * Copy constructor to preserve value semantics.
-     * 
+     *
      * \param[in] other The other matrix to be copied.
      * \return A new matrix with the same values as the other matrix.
      */
@@ -342,7 +379,7 @@ public:
 
     /**
      * Move constructor to preserve value semantics.
-     * 
+     *
      * \param[in] other The other matrix to be moved.
      * \return A new matrix with the same values as the other matrix.
      */
@@ -350,7 +387,7 @@ public:
 
     /**
      * Copy assignment operator to preserve value semantics.
-     * 
+     *
      * \param[in] other The other matrix to be copied.
      * \return A new matrix with the same values as the other matrix.
      */
@@ -358,7 +395,7 @@ public:
 
     /**
      * Move assignment operator to preserve value semantics.
-     * 
+     *
      * \param[in] other The other matrix to be moved.
      * \return A new matrix with the same values as the other matrix.
      */

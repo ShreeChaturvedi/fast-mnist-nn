@@ -8,13 +8,13 @@
  *
  */
 
-#include <iostream>
-#include <functional>
-#include <vector>
-#include <tuple>
-#include <string>
-#include <cstdlib>
 #include "fast_mnist/Matrix.h"
+#include <cstdlib>
+#include <functional>
+#include <iostream>
+#include <string>
+#include <tuple>
+#include <vector>
 
 // A vector containing a list of doubles
 using DoubleVec = std::vector<double>;
@@ -52,9 +52,9 @@ class NeuralNet {
      * \param[out] nnet The neural network whose data is to be
      * read/modified by this method.
      */
-    friend std::istream& operator>>(std::istream& is, NeuralNet& nnet);    
+    friend std::istream& operator>>(std::istream& is, NeuralNet& nnet);
 
-public:
+  public:
     /**
      * Creates a neural network with a given number of layers with a
      * given number of neurons at each layer. For example NeuralNet
@@ -110,7 +110,7 @@ public:
      */
     void train(const std::string& path);
 
-protected:
+  protected:
     /**
      * This is an internal helper method that is used to initializes
      * the biases and weights matrix values for each layer.  This
@@ -139,7 +139,7 @@ protected:
     static Val sigmoid(const Val val) {
         return 1. / (1. + std::exp(-val));
     }
-    
+
     /**
      * A simple inverse-sigmoid function.
      *
@@ -152,7 +152,7 @@ protected:
         return sigmoid(val) * (1 - sigmoid(val));
     }
 
-private:
+  private:
     /**
      * The column-vector of biases associated with each layer of the
      * neural network.
