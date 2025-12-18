@@ -7,7 +7,7 @@
 #include <iostream>
 
 
-#include "Matrix.h"
+#include "fast_mnist/Matrix.h"
 
 
 /** Allocate 64B-aligned storage and compute padded leading dimension. */

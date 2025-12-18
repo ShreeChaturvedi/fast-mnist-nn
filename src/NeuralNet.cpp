@@ -15,7 +15,7 @@
 #include <immintrin.h>
 #include <cstring>
 
-#include "NeuralNet.h"
+#include "fast_mnist/NeuralNet.h"
 
 #if defined(__AVX512F__)
   #define NN_HAS_AVX512 1

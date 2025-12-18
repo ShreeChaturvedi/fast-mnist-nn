@@ -14,7 +14,7 @@
 #include <tuple>
 #include <string>
 #include <cstdlib>
-#include "Matrix.h"
+#include "fast_mnist/Matrix.h"
 
 // A vector containing a list of doubles
 using DoubleVec = std::vector<double>;

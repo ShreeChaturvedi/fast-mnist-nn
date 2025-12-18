@@ -5,8 +5,8 @@ High-performance C++ neural network for MNIST digit recognition.
 ## Build
 
 ```sh
-g++ -g -Wall -std=c++17 -O3 -march=native \
-  Matrix.cpp NeuralNet.cpp main.cpp -o fast_mnist_nn
+g++ -g -Wall -std=c++17 -O3 -march=native -Iinclude \
+  src/Matrix.cpp src/NeuralNet.cpp apps/fast_mnist_cli.cpp -o fast_mnist_nn
 ```
 
 ## Run

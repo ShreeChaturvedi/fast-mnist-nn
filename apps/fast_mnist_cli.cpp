@@ -23,7 +23,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include "NeuralNet.h"
+#include "fast_mnist/NeuralNet.h"
 
 /**
  * Cache accessor to avoid a global variable while retaining reuse.
