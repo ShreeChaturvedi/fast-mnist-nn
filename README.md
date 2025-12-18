@@ -52,3 +52,9 @@ ctest --test-dir build
 The MNIST PGM files are not included in this repository. The
 `TrainingSetList.txt` and `TestingSetList.txt` files expect relative
 paths like `TrainingSet/digit_10000_7.pgm` under your data root.
+
+Generate the dataset locally:
+
+```sh
+python3 tools/prepare_mnist.py --output data --list-dir .
+```
