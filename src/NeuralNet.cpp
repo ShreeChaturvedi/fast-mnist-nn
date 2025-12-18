@@ -8,24 +8,31 @@
  *
  */
 
+#include <algorithm>
+#include <cmath>
+#include <cstring>
 #include <iostream>
 #include <vector>
-#include <cmath>
-#include <algorithm>
-#include <immintrin.h>
-#include <cstring>
 
 #include "fast_mnist/NeuralNet.h"
 
 #if defined(__AVX512F__)
-  #define NN_HAS_AVX512 1
+  #define NN_USE_AVX512 1
 #elif defined(__AVX2__)
-  #define NN_HAS_AVX2 1
+  #define NN_USE_AVX2 1
+#elif defined(__ARM_NEON) || defined(__ARM_NEON__)
+  #define NN_USE_NEON 1
 #else
-  #define NN_HAS_SCALAR 1
+  #define NN_USE_SCALAR 1
 #endif
 
-#if NN_HAS_AVX512
+#if NN_USE_AVX512 || NN_USE_AVX2
+  #include <immintrin.h>
+#elif NN_USE_NEON
+  #include <arm_neon.h>
+#endif
+
+#if NN_USE_AVX512
 /*
  * Compute dot product of one row with a vector using AVX-512
  * vectorization with dual accumulators. This is the key performance
@@ -77,6 +84,97 @@ static inline __attribute__((target("avx512f,fma"))) void sgd_update_row_avx512(
 }
 #endif
 
+#if NN_USE_AVX2
+static inline double dot256_rowvec(const double* __restrict row,
+                                   const double* __restrict x,
+                                   std::size_t n) {
+    std::size_t k = 0, n8 = n & ~std::size_t(7);
+    __m256d acc0 = _mm256_setzero_pd();
+    __m256d acc1 = _mm256_setzero_pd();
+    for (; k < n8; k += 8) {
+        __m256d r0 = _mm256_load_pd(row + k);
+        __m256d r1 = _mm256_load_pd(row + k + 4);
+        __m256d x0 = _mm256_load_pd(x + k);
+        __m256d x1 = _mm256_load_pd(x + k + 4);
+#if defined(__FMA__)
+        acc0 = _mm256_fmadd_pd(r0, x0, acc0);
+        acc1 = _mm256_fmadd_pd(r1, x1, acc1);
+#else
+        acc0 = _mm256_add_pd(acc0, _mm256_mul_pd(r0, x0));
+        acc1 = _mm256_add_pd(acc1, _mm256_mul_pd(r1, x1));
+#endif
+    }
+    __m256d acc = _mm256_add_pd(acc0, acc1);
+    __m128d lo = _mm256_castpd256_pd128(acc);
+    __m128d hi = _mm256_extractf128_pd(acc, 1);
+    __m128d sum2 = _mm_add_pd(lo, hi);
+    double tmp[2];
+    _mm_storeu_pd(tmp, sum2);
+    double sum = tmp[0] + tmp[1];
+    for (; k < n; ++k) sum += row[k] * x[k];
+    return sum;
+}
+
+static inline void sgd_update_row_avx2(double* __restrict wr,
+                                       const double* __restrict ap,
+                                       std::size_t n,
+                                       double scale) {
+    std::size_t k = 0, n4 = n & ~std::size_t(3);
+    __m256d s = _mm256_set1_pd(scale);
+    for (; k < n4; k += 4) {
+        __m256d w = _mm256_load_pd(wr + k);
+        __m256d a = _mm256_load_pd(ap + k);
+#if defined(__FMA__)
+        _mm256_store_pd(wr + k, _mm256_fmadd_pd(s, a, w));
+#else
+        __m256d wa = _mm256_mul_pd(s, a);
+        _mm256_store_pd(wr + k, _mm256_add_pd(w, wa));
+#endif
+    }
+    for (; k < n; ++k) wr[k] += scale * ap[k];
+}
+#endif
+
+#if NN_USE_NEON
+static inline double dot_neon_rowvec(const double* __restrict row,
+                                     const double* __restrict x,
+                                     std::size_t n) {
+    std::size_t k = 0, n2 = n & ~std::size_t(1);
+    float64x2_t acc = vdupq_n_f64(0.0);
+    for (; k < n2; k += 2) {
+        float64x2_t r = vld1q_f64(row + k);
+        float64x2_t xv = vld1q_f64(x + k);
+#if defined(__ARM_FEATURE_FMA)
+        acc = vfmaq_f64(acc, r, xv);
+#else
+        acc = vmlaq_f64(acc, r, xv);
+#endif
+    }
+    double sum = vgetq_lane_f64(acc, 0) + vgetq_lane_f64(acc, 1);
+    for (; k < n; ++k) sum += row[k] * x[k];
+    return sum;
+}
+
+static inline void sgd_update_row_neon(double* __restrict wr,
+                                       const double* __restrict ap,
+                                       std::size_t n,
+                                       double scale) {
+    std::size_t k = 0, n2 = n & ~std::size_t(1);
+    float64x2_t s = vdupq_n_f64(scale);
+    for (; k < n2; k += 2) {
+        float64x2_t w = vld1q_f64(wr + k);
+        float64x2_t a = vld1q_f64(ap + k);
+#if defined(__ARM_FEATURE_FMA)
+        w = vfmaq_f64(w, s, a);
+#else
+        w = vmlaq_f64(w, s, a);
+#endif
+        vst1q_f64(wr + k, w);
+    }
+    for (; k < n; ++k) wr[k] += scale * ap[k];
+}
+#endif
+
 /*
  * Fused operation: y = sigmoid(W * x + b) where W is a row-major
  * matrix, x is a column vector, and y is the output vector.
@@ -90,8 +188,12 @@ static inline void gemv_rowplusbias_sigmoid(const Matrix& W, const Matrix& b,
     for (std::size_t i = 0; i < m; ++i) {
         const double* __restrict row = W[i].data();
         double s = 0.0;
-#if NN_HAS_AVX512
+#if NN_USE_AVX512
         s = dot512_rowvec(row, xp, n);
+#elif NN_USE_AVX2
+        s = dot256_rowvec(row, xp, n);
+#elif NN_USE_NEON
+        s = dot_neon_rowvec(row, xp, n);
 #else
         for (std::size_t k = 0; k < n; ++k) s += row[k] * xp[k];
 #endif
@@ -105,11 +207,23 @@ static inline void gemv_rowplusbias_sigmoid(const Matrix& W, const Matrix& b,
  */
 static inline void zero_vector(double* dp, std::size_t n) {
     std::size_t k = 0;
-#if NN_HAS_AVX512
+#if NN_USE_AVX512
     const std::size_t n8 = n & ~std::size_t(7);
     __m512d z = _mm512_setzero_pd();
     for (; k < n8; k += 8) {
         _mm512_store_pd(dp + k, z);
+    }
+#elif NN_USE_AVX2
+    const std::size_t n4 = n & ~std::size_t(3);
+    __m256d z = _mm256_setzero_pd();
+    for (; k < n4; k += 4) {
+        _mm256_store_pd(dp + k, z);
+    }
+#elif NN_USE_NEON
+    const std::size_t n2 = n & ~std::size_t(1);
+    float64x2_t z = vdupq_n_f64(0.0);
+    for (; k < n2; k += 2) {
+        vst1q_f64(dp + k, z);
     }
 #endif
     for (; k < n; ++k) {
@@ -131,7 +245,7 @@ static inline void accumulate_wt_delta(const Matrix& W,
 
         const double* __restrict wr = W[i].data();
         std::size_t k = 0;
-#if NN_HAS_AVX512
+#if NN_USE_AVX512
         const std::size_t n8 = n & ~std::size_t(7);
         __m512d a = _mm512_set1_pd(alpha);
         for (; k < n8; k += 8) {
@@ -139,6 +253,32 @@ static inline void accumulate_wt_delta(const Matrix& W,
             __m512d w = _mm512_load_pd(wr + k);
             d = _mm512_fmadd_pd(a, w, d);
             _mm512_store_pd(dst + k, d);
+        }
+#elif NN_USE_AVX2
+        const std::size_t n4 = n & ~std::size_t(3);
+        __m256d a = _mm256_set1_pd(alpha);
+        for (; k < n4; k += 4) {
+            __m256d d = _mm256_load_pd(dst + k);
+            __m256d w = _mm256_load_pd(wr + k);
+#if defined(__FMA__)
+            d = _mm256_fmadd_pd(a, w, d);
+#else
+            d = _mm256_add_pd(d, _mm256_mul_pd(a, w));
+#endif
+            _mm256_store_pd(dst + k, d);
+        }
+#elif NN_USE_NEON
+        const std::size_t n2 = n & ~std::size_t(1);
+        float64x2_t a = vdupq_n_f64(alpha);
+        for (; k < n2; k += 2) {
+            float64x2_t d = vld1q_f64(dst + k);
+            float64x2_t w = vld1q_f64(wr + k);
+#if defined(__ARM_FEATURE_FMA)
+            d = vfmaq_f64(d, a, w);
+#else
+            d = vmlaq_f64(d, a, w);
+#endif
+            vst1q_f64(dst + k, d);
         }
 #endif
         for (; k < n; ++k) {
@@ -154,7 +294,7 @@ static inline void apply_sigmoid_derivative(const double* __restrict ap,
                                             double* __restrict dp,
                                             std::size_t n) {
     std::size_t k = 0;
-#if NN_HAS_AVX512
+#if NN_USE_AVX512
     const std::size_t n8 = n & ~std::size_t(7);
     for (; k < n8; k += 8) {
         __m512d a   = _mm512_load_pd(ap + k);
@@ -162,6 +302,24 @@ static inline void apply_sigmoid_derivative(const double* __restrict ap,
         __m512d sp  = _mm512_mul_pd(a, _mm512_sub_pd(one, a));
         __m512d d   = _mm512_load_pd(dp + k);
         _mm512_store_pd(dp + k, _mm512_mul_pd(d, sp));
+    }
+#elif NN_USE_AVX2
+    const std::size_t n4 = n & ~std::size_t(3);
+    for (; k < n4; k += 4) {
+        __m256d a   = _mm256_load_pd(ap + k);
+        __m256d one = _mm256_set1_pd(1.0);
+        __m256d sp  = _mm256_mul_pd(a, _mm256_sub_pd(one, a));
+        __m256d d   = _mm256_load_pd(dp + k);
+        _mm256_store_pd(dp + k, _mm256_mul_pd(d, sp));
+    }
+#elif NN_USE_NEON
+    const std::size_t n2 = n & ~std::size_t(1);
+    for (; k < n2; k += 2) {
+        float64x2_t a = vld1q_f64(ap + k);
+        float64x2_t one = vdupq_n_f64(1.0);
+        float64x2_t sp = vmulq_f64(a, vsubq_f64(one, a));
+        float64x2_t d = vld1q_f64(dp + k);
+        vst1q_f64(dp + k, vmulq_f64(d, sp));
     }
 #endif
     for (; k < n; ++k) {
@@ -208,8 +366,12 @@ static inline void sgd_update_inplace(Matrix& W, Matrix& b,
 
         // Update weights for this row
         double* __restrict wr = W[i].data();
-#if NN_HAS_AVX512
+#if NN_USE_AVX512
         sgd_update_row_avx512(wr, ap, n, scale);
+#elif NN_USE_AVX2
+        sgd_update_row_avx2(wr, ap, n, scale);
+#elif NN_USE_NEON
+        sgd_update_row_neon(wr, ap, n, scale);
 #else
         for (std::size_t j = 0; j < n; ++j) wr[j] += scale * ap[j];
 #endif
@@ -248,7 +410,7 @@ static inline void compute_output_delta(const Matrix& a_L,
     const double* __restrict y  = &expected[0][0];
 
     std::size_t k = 0;
-#if NN_HAS_AVX512
+#if NN_USE_AVX512
     const std::size_t m8 = m & ~std::size_t(7);
     for (; k < m8; k += 8) {
         __m512d av = _mm512_load_pd(aL + k);
@@ -257,6 +419,26 @@ static inline void compute_output_delta(const Matrix& a_L,
         __m512d one  = _mm512_set1_pd(1.0);
         __m512d sp   = _mm512_mul_pd(av, _mm512_sub_pd(one, av));
         _mm512_store_pd(d + k, _mm512_mul_pd(diff, sp));
+    }
+#elif NN_USE_AVX2
+    const std::size_t m4 = m & ~std::size_t(3);
+    for (; k < m4; k += 4) {
+        __m256d av = _mm256_load_pd(aL + k);
+        __m256d yv = _mm256_load_pd(y + k);
+        __m256d diff = _mm256_sub_pd(av, yv);
+        __m256d one = _mm256_set1_pd(1.0);
+        __m256d sp = _mm256_mul_pd(av, _mm256_sub_pd(one, av));
+        _mm256_store_pd(d + k, _mm256_mul_pd(diff, sp));
+    }
+#elif NN_USE_NEON
+    const std::size_t m2 = m & ~std::size_t(1);
+    for (; k < m2; k += 2) {
+        float64x2_t av = vld1q_f64(aL + k);
+        float64x2_t yv = vld1q_f64(y + k);
+        float64x2_t diff = vsubq_f64(av, yv);
+        float64x2_t one = vdupq_n_f64(1.0);
+        float64x2_t sp = vmulq_f64(av, vsubq_f64(one, av));
+        vst1q_f64(d + k, vmulq_f64(diff, sp));
     }
 #endif
     for (; k < m; ++k) {

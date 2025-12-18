@@ -3,8 +3,10 @@
 
 #include <cassert>
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <new>
 
 
 #include "fast_mnist/Matrix.h"
