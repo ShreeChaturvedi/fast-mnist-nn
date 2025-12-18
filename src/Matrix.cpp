@@ -277,6 +277,10 @@ Matrix Matrix::dot(const Matrix& rhs) const {
         rhs.cols_, ld_, result.ld_); return result; }
     Matrix BT = rhs.transpose();
     constexpr std::size_t BI = 64, BJ = 64;
+#if defined(FAST_MNIST_USE_OPENMP)
+#pragma omp parallel for schedule(static) \
+    if (rows_ * rhs.cols_ >= 4096)
+#endif
     for (std::size_t i0 = 0; i0 < rows_; i0 += BI) {
         const std::size_t iMax = std::min(rows_, i0 + BI);
         for (std::size_t j0 = 0; j0 < rhs.cols_; j0 += BJ) {
@@ -343,6 +347,10 @@ Matrix Matrix::transpose() const {
     }
     // blocked transpose with contiguous stores on destination
     constexpr std::size_t TileSize = 32;
+#if defined(FAST_MNIST_USE_OPENMP)
+#pragma omp parallel for collapse(2) schedule(static) \
+    if (srcRows * srcCols >= 4096)
+#endif
     for (std::size_t col0 = 0; col0 < srcCols; col0 += TileSize) {
         const std::size_t colEnd = std::min(srcCols, col0 + TileSize);
         for (std::size_t row0 = 0; row0 < srcRows; row0 += TileSize) {
@@ -356,6 +364,9 @@ Matrix Matrix::transpose() const {
 /** In-place AXPY: this += alpha * X. */
 void Matrix::axpy(Val alpha, const Matrix& X) {
     if (rows_ == 0 || cols_ == 0 || alpha == Val(0)) return;
+#if defined(FAST_MNIST_USE_OPENMP)
+#pragma omp parallel for schedule(static) if (rows_ * cols_ >= 4096)
+#endif
     for (std::size_t r = 0; r < rows_; ++r) {
         Val* dst = data_ + r * ld_;
         const Val* src = X.data_ + r * X.ld_;
