@@ -446,8 +446,8 @@ Matrix Matrix::transpose() const {
     schedule(static) if (srcRows * srcCols >= 4096)
 #endif
     for (std::size_t col0 = 0; col0 < srcCols; col0 += TileSize) {
-        const std::size_t colEnd = std::min(srcCols, col0 + TileSize);
         for (std::size_t row0 = 0; row0 < srcRows; row0 += TileSize) {
+            const std::size_t colEnd = std::min(srcCols, col0 + TileSize);
             const std::size_t rowEnd = std::min(srcRows, row0 + TileSize);
             transposeTileCopy(src, dst, lda, ldb, row0, rowEnd, col0, colEnd);
         }
