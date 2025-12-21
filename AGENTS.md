@@ -6,8 +6,9 @@
 - `apps/fast_mnist_cli.cpp` is the CLI entry point used for training
   and evaluation.
 - `tests/` contains Catch2 unit tests.
-- `TrainingSetList.txt` and `TestingSetList.txt` store relative PGM
-  paths (for example, `TrainingSet/digit_10000_7.pgm`).
+- `TrainingSetList.txt` and `TestingSetList.txt` are generated locally
+  by `tools/prepare_mnist.py` and store relative PGM paths (for example,
+  `TrainingSet/digit_10000_7.pgm`).
 
 ## Build, Test, and Development Commands
 Recommended CMake workflow:

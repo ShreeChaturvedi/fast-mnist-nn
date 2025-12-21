@@ -1,6 +1,8 @@
 # Build artifacts
 build/
 build-test/
+build-bench/
+build-omp/
 cmake-build-*/
 CMakeFiles/
 CMakeCache.txt
@@ -32,3 +34,8 @@ perf.hist.*
 *.zip
 *.pgm
 data/
+TrainingSetList.txt
+TestingSetList.txt
+
+# Doxygen output
+docs/doxygen/
