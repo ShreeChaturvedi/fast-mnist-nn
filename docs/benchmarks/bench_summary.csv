@@ -1,0 +1,9 @@
+benchmark,metric,value,unit
+benchDot/64,time,96972.15346407612,ns/op
+benchDot/128,time,379711.7025971406,ns/op
+benchTranspose/256,time,28197.915393486535,ns/op
+benchTranspose/512,time,101070.4543750446,ns/op
+benchAxpy/256,time,26254.169791399552,ns/op
+benchAxpy/512,time,36403.48550473852,ns/op
+benchLearn,throughput,45821.31496652499,img/s
+benchClassify,throughput,79473.02672580686,img/s
