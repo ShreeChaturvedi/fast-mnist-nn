@@ -10,6 +10,7 @@
 
 #include "fast_mnist/Matrix.h"
 #include <cstdlib>
+#include <cmath>
 #include <functional>
 #include <iostream>
 #include <string>

@@ -3,10 +3,14 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
 #include <new>
+#if defined(_MSC_VER)
+#include <malloc.h>
+#endif
 
 #if defined(__AVX512F__)
 #define MATRIX_USE_AVX512 1
@@ -36,15 +40,26 @@ void Matrix::allocate() {
     static constexpr std::size_t AlignBytes = 64;
     static constexpr std::size_t AlignElem = AlignBytes / sizeof(Val);
     ld_ = (cols_ == 1) ? 1 : ((cols_ + (AlignElem - 1)) & ~(AlignElem - 1));
+#if defined(_MSC_VER)
+    data_ = static_cast<Val*>(
+        _aligned_malloc(sizeof(Val) * rows_ * ld_, AlignBytes));
+    if (!data_)
+        throw std::bad_alloc();
+#else
     void* p = nullptr;
     if (::posix_memalign(&p, AlignBytes, sizeof(Val) * rows_ * ld_) != 0 || !p)
         throw std::bad_alloc();
     data_ = static_cast<Val*>(p);
+#endif
 }
 
 /** Deallocate internal storage and reset pointer. */
 void Matrix::deallocate() {
+#if defined(_MSC_VER)
+    _aligned_free(data_);
+#else
     std::free(data_);
+#endif
     data_ = nullptr;
 }
 
@@ -365,12 +380,18 @@ Matrix Matrix::dot(const Matrix& rhs) const {
 #if defined(FAST_MNIST_USE_OPENMP)
 #pragma omp parallel for schedule(static) if (rows_ * rhs.cols_ >= 4096)
 #endif
-    for (std::size_t i0 = 0; i0 < rows_; i0 += BI) {
-        const std::size_t iMax = std::min(rows_, i0 + BI);
-        for (std::size_t j0 = 0; j0 < rhs.cols_; j0 += BJ) {
-            const std::size_t jMax = std::min(rhs.cols_, j0 + BJ);
+    for (std::ptrdiff_t i0 = 0;
+         i0 < static_cast<std::ptrdiff_t>(rows_);
+         i0 += BI) {
+        const std::size_t i0u = static_cast<std::size_t>(i0);
+        const std::size_t iMax = std::min(rows_, i0u + BI);
+        for (std::ptrdiff_t j0 = 0;
+             j0 < static_cast<std::ptrdiff_t>(rhs.cols_);
+             j0 += BJ) {
+            const std::size_t j0u = static_cast<std::size_t>(j0);
+            const std::size_t jMax = std::min(rhs.cols_, j0u + BJ);
             gemmTileBlock(data_, BT.data_, result.data_, ld_, BT.ld_,
-                          result.ld_, i0, iMax, j0, jMax, cols_);
+                          result.ld_, i0u, iMax, j0u, jMax, cols_);
         }
     }
     return result;
@@ -445,11 +466,18 @@ Matrix Matrix::transpose() const {
 #pragma omp parallel for collapse(2)                                           \
     schedule(static) if (srcRows * srcCols >= 4096)
 #endif
-    for (std::size_t col0 = 0; col0 < srcCols; col0 += TileSize) {
-        for (std::size_t row0 = 0; row0 < srcRows; row0 += TileSize) {
-            const std::size_t colEnd = std::min(srcCols, col0 + TileSize);
-            const std::size_t rowEnd = std::min(srcRows, row0 + TileSize);
-            transposeTileCopy(src, dst, lda, ldb, row0, rowEnd, col0, colEnd);
+    for (std::ptrdiff_t col0 = 0;
+         col0 < static_cast<std::ptrdiff_t>(srcCols);
+         col0 += TileSize) {
+        for (std::ptrdiff_t row0 = 0;
+             row0 < static_cast<std::ptrdiff_t>(srcRows);
+             row0 += TileSize) {
+            const std::size_t col0u = static_cast<std::size_t>(col0);
+            const std::size_t row0u = static_cast<std::size_t>(row0);
+            const std::size_t colEnd = std::min(srcCols, col0u + TileSize);
+            const std::size_t rowEnd = std::min(srcRows, row0u + TileSize);
+            transposeTileCopy(src, dst, lda, ldb, row0u, rowEnd, col0u,
+                              colEnd);
         }
     }
     return out;
@@ -462,9 +490,12 @@ void Matrix::axpy(Val alpha, const Matrix& X) {
 #if defined(FAST_MNIST_USE_OPENMP)
 #pragma omp parallel for schedule(static) if (rows_ * cols_ >= 4096)
 #endif
-    for (std::size_t r = 0; r < rows_; ++r) {
-        Val* dst = data_ + r * ld_;
-        const Val* src = X.data_ + r * X.ld_;
+    for (std::ptrdiff_t r = 0;
+         r < static_cast<std::ptrdiff_t>(rows_);
+         ++r) {
+        const std::size_t ru = static_cast<std::size_t>(r);
+        Val* dst = data_ + ru * ld_;
+        const Val* src = X.data_ + ru * X.ld_;
         for (std::size_t c = 0; c < cols_; ++c)
             dst[c] += alpha * src[c];
     }
