@@ -543,12 +543,12 @@ std::istream& operator>>(std::istream& is, NeuralNet& nnet) {
     const int layerCount = nnet.layerSizes[0].size();
     // Now read the biases for each layer
     Matrix temp;
-    for (int i = 0; (i < layerCount); i++) {
+    for (int i = 0; (i < layerCount - 1); i++) {
         is >> temp;
         nnet.biases.push_back(temp);
     }
     // Now read the weights for each layer
-    for (int i = 0; (i < layerCount); i++) {
+    for (int i = 0; (i < layerCount - 1); i++) {
         is >> temp;
         nnet.weights.push_back(temp);
     }

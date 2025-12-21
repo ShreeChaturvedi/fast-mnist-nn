@@ -1,6 +1,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <sstream>
+
 #include "fast_mnist/Matrix.h"
 
 TEST_CASE("Matrix initializes and indexes", "[matrix]") {
@@ -67,4 +69,23 @@ TEST_CASE("Matrix axpy updates in place", "[matrix]") {
     x.axpy(2.0, y);
     REQUIRE(x[0][0] == Catch::Approx(5.0));
     REQUIRE(x[1][1] == Catch::Approx(5.0));
+}
+
+TEST_CASE("Matrix stream round trip", "[matrix]") {
+    Matrix m(2, 2, 0.0);
+    m[0][0] = 1.0;
+    m[0][1] = 2.0;
+    m[1][0] = 3.0;
+    m[1][1] = 4.0;
+
+    std::stringstream ss;
+    ss << m;
+
+    Matrix loaded;
+    ss >> loaded;
+
+    REQUIRE(loaded.height() == 2);
+    REQUIRE(loaded.width() == 2);
+    REQUIRE(loaded[1][0] == Catch::Approx(3.0));
+    REQUIRE(loaded[0][1] == Catch::Approx(2.0));
 }
