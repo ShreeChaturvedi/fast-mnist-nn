@@ -93,9 +93,9 @@ void benchClassify(benchmark::State& state) {
 
 } // namespace
 
-BENCHMARK(benchDot)->Arg(64)->Arg(128);
-BENCHMARK(benchTranspose)->Arg(256)->Arg(512);
-BENCHMARK(benchAxpy)->Arg(256)->Arg(512);
+BENCHMARK(benchDot)->RangeMultiplier(2)->Range(32, 256);
+BENCHMARK(benchTranspose)->RangeMultiplier(2)->Range(128, 1024);
+BENCHMARK(benchAxpy)->RangeMultiplier(2)->Range(128, 1024);
 BENCHMARK(benchLearn);
 BENCHMARK(benchClassify);
 

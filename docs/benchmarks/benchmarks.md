@@ -9,6 +9,12 @@ Results are recorded as JSON and summarized into CSV for README tables.
 python3 tools/run_benchmarks.py --openmp --native
 ```
 
+### Configs
+
+- baseline: OpenMP off, native off
+- native: OpenMP off, native on (`--native`)
+- openmp+native: OpenMP on, native on (`--openmp` + `--native`)
+
 ### Notes
 
 - `benchDot`, `benchTranspose`, `benchAxpy` use square matrices.

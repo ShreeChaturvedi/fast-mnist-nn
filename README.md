@@ -36,35 +36,75 @@ Use `python3 tools/run.py --help` for flags.
 
 ## Benchmarks
 
-Run file: `docs/benchmarks/runs/bench-20251221-132025.json`
+Run files:
+- `docs/benchmarks/runs/bench-20251226-154121-baseline.json`
+- `docs/benchmarks/runs/bench-20251226-154121-native.json`
+- `docs/benchmarks/runs/bench-20251226-154121-openmp-native.json`
 
+Configs:
+- baseline: OpenMP off, native off
+- native: OpenMP off, native on
+- openmp+native: OpenMP on, native on
+
+Environment:
 - Apple M2, macOS 15.5
 - Apple clang 17.0.0
-- Release (`-O3`, `-march=native`, OpenMP on)
+- Release (`-O3`, OpenMP on/off, `-march=native` on/off)
 
-Matrix ops (ns/op):
+Matrix ops (ns/op, lower is better):
 
-| Case | ns/op |
-| --- | --- |
-| dot 64 | `96972` |
-| dot 128 | `379712` |
-| transpose 256 | `28198` |
-| transpose 512 | `101070` |
-| axpy 256 | `26254` |
-| axpy 512 | `36403` |
+| Case | baseline | native | openmp+native |
+| --- | --- | --- | --- |
+| dot 32 | `6165` | `6229` | `6287` |
+| dot 64 | `65252` | `57222` | `89130` |
+| dot 128 | `575281` | `587767` | `374400` |
+| dot 256 | `4835360` | `4759132` | `1379835` |
+| transpose 128 | `5441` | `5292` | `23662` |
+| transpose 256 | `23098` | `22104` | `31108` |
+| transpose 512 | `198735` | `178676` | `87914` |
+| transpose 1024 | `978383` | `861078` | `502426` |
+| axpy 128 | `3486` | `3477` | `23917` |
+| axpy 256 | `13886` | `13896` | `26335` |
+| axpy 512 | `55848` | `55441` | `35846` |
+| axpy 1024 | `230626` | `229230` | `114910` |
 
-Training/inference throughput:
+Training/inference throughput (img/s, higher is better):
 
-| Case | Images/sec |
-| --- | --- |
-| learn step | `45821` |
-| classify | `79473` |
+| Case | baseline | native | openmp+native |
+| --- | --- | --- | --- |
+| learn step | `48755` | `49399` | `48636` |
+| classify | `81628` | `80712` | `69994` |
 
-![Matrix benchmark chart][matrix-light]
-![Matrix benchmark chart][matrix-dark]
+OpenMP overhead shows up on smaller sizes; the line charts illustrate where
+parallelism starts to pay off.
 
-![Throughput chart][throughput-light]
-![Throughput chart][throughput-dark]
+<p align="center">
+  <img src="docs/benchmarks/charts/dot-light.svg#gh-light-mode-only" width="760"
+       alt="Dot scaling">
+  <img src="docs/benchmarks/charts/dot-dark.svg#gh-dark-mode-only" width="760"
+       alt="Dot scaling">
+</p>
+
+<p align="center">
+  <img src="docs/benchmarks/charts/transpose-light.svg#gh-light-mode-only"
+       width="760" alt="Transpose scaling">
+  <img src="docs/benchmarks/charts/transpose-dark.svg#gh-dark-mode-only"
+       width="760" alt="Transpose scaling">
+</p>
+
+<p align="center">
+  <img src="docs/benchmarks/charts/axpy-light.svg#gh-light-mode-only" width="760"
+       alt="Axpy scaling">
+  <img src="docs/benchmarks/charts/axpy-dark.svg#gh-dark-mode-only" width="760"
+       alt="Axpy scaling">
+</p>
+
+<p align="center">
+  <img src="docs/benchmarks/charts/throughput-compare-light.svg#gh-light-mode-only"
+       width="760" alt="Throughput comparison">
+  <img src="docs/benchmarks/charts/throughput-compare-dark.svg#gh-dark-mode-only"
+       width="760" alt="Throughput comparison">
+</p>
 
 See `docs/benchmarks/benchmarks.md` for methodology and scripts.
 
@@ -126,7 +166,3 @@ MIT -- see `LICENSE`.
 [license-url]: LICENSE
 [cpp-badge]: https://img.shields.io/badge/C%2B%2B-17-blue.svg
 [cpp-url]: https://isocpp.org/
-[matrix-light]: docs/benchmarks/charts/matrix-light.svg#gh-light-mode-only
-[matrix-dark]: docs/benchmarks/charts/matrix-dark.svg#gh-dark-mode-only
-[throughput-light]: docs/benchmarks/charts/throughput-light.svg#gh-light-mode-only
-[throughput-dark]: docs/benchmarks/charts/throughput-dark.svg#gh-dark-mode-only
