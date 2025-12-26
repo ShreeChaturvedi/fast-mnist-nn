@@ -463,19 +463,21 @@ NeuralNet::NeuralNet(const std::vector<int>& layers)
  * Helper method called from the constructor to initialize the biases
  * and weight matrices for each layer in the neural netowrk.
  */
-void NeuralNet::initBiasAndWeightMatrices(const std::vector<int>& layerSizes,
-                                          MatrixVec& biases,
-                                          MatrixVec& weights) const {
+void NeuralNet::initBiasAndWeightMatrices(
+    const std::vector<int>& layerSizesIn,
+    MatrixVec& biasesOut,
+    MatrixVec& weightsOut) const {
     // Create the column matrices for each layer in the nnet.  Each
     // value is initialized with a random value in the range 0 to 1.0
-    for (size_t lyr = 1; (lyr < layerSizes.size()); lyr++) {
+    for (size_t lyr = 1; (lyr < layerSizesIn.size()); lyr++) {
         // Convenience variables to keep code readable
-        const int rows = layerSizes.at(lyr), cols = layerSizes.at(lyr - 1);
+        const int rows = layerSizesIn.at(lyr);
+        const int cols = layerSizesIn.at(lyr - 1);
 
-        biases.push_back(Matrix(rows, 1));
+        biasesOut.push_back(Matrix(rows, 1));
 
         // Create the 2-D matrices of weights for each layer
-        weights.push_back(Matrix(rows, cols));
+        weightsOut.push_back(Matrix(rows, cols));
     }
 }
 
@@ -540,7 +542,8 @@ std::ostream& operator<<(std::ostream& os, const NeuralNet& nnet) {
 std::istream& operator>>(std::istream& is, NeuralNet& nnet) {
     // First load the layer sizes
     is >> nnet.layerSizes;
-    const int layerCount = nnet.layerSizes[0].size();
+    const int layerCount =
+        static_cast<int>(nnet.layerSizes[0].size());
     // Now read the biases for each layer
     Matrix temp;
     for (int i = 0; (i < layerCount - 1); i++) {
