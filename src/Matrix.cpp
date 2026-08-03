@@ -358,7 +358,7 @@ static inline void gemmTileBlock(const Val* __restrict A,
  *
  * \param[in] rhs The other matrix to be used.  This matrix must
  * have the same number of rows as the number of columns in this
- * matrix.  Otherwise this method throws an excpetion.
+ * matrix.  Otherwise this method throws an exception.
  *
  * \return The resulting matrix in which each value has been
  * computed by multiplying the corresponding values from \c this
