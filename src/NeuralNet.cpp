@@ -544,6 +544,12 @@ std::istream& operator>>(std::istream& is, NeuralNet& nnet) {
     is >> nnet.layerSizes;
     const int layerCount =
         static_cast<int>(nnet.layerSizes[0].size());
+    // Replace existing layers so a second deserialize does not append
+    // and double the network depth.
+    nnet.biases.clear();
+    nnet.weights.clear();
+    nnet.biases.reserve(static_cast<std::size_t>(layerCount - 1));
+    nnet.weights.reserve(static_cast<std::size_t>(layerCount - 1));
     // Now read the biases for each layer
     Matrix temp;
     for (int i = 0; (i < layerCount - 1); i++) {
