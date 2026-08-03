@@ -380,8 +380,8 @@ static inline void sgd_update_inplace(Matrix& W, Matrix& b, const Matrix& delta,
 }
 
 /*
- * Initialize static buffers for activations and deltas.
- * This is called once and reused for all subsequent training steps.
+ * Initialize scratch buffers for activations and deltas.
+ * Reused across training steps; reallocated when architecture changes.
  */
 static inline void init_learn_buffers(std::vector<Matrix>& a,
                                       std::vector<Matrix>& delta,
@@ -395,6 +395,25 @@ static inline void init_learn_buffers(std::vector<Matrix>& a,
     for (int l = 1; l <= L; ++l) {
         delta[l] = Matrix(weights[l - 1].height(), 1, Matrix::NoInit{});
     }
+}
+
+/*
+ * True when activation buffers match the current network layout.
+ */
+static inline bool learn_buffers_match(const std::vector<Matrix>& a,
+                                       const MatrixVec& weights, int L) {
+    if (L < 1 || weights.empty())
+        return false;
+    if (static_cast<int>(a.size()) != L + 1)
+        return false;
+    if (a[0].height() != weights[0].width() || a[0].width() != 1)
+        return false;
+    for (int l = 1; l <= L; ++l) {
+        if (a[l].height() != weights[static_cast<std::size_t>(l) - 1].height() ||
+            a[l].width() != 1)
+            return false;
+    }
+    return true;
 }
 
 /*
@@ -488,12 +507,14 @@ void NeuralNet::initBiasAndWeightMatrices(
  */
 void NeuralNet::learn(const Matrix& inputs, const Matrix& expected,
                       const Val eta) {
-    const int L = static_cast<int>(layerSizes[0].size()) - 1;
+    const int L = static_cast<int>(weights.size());
+    if (L < 1)
+        return;
 
-    // Use static scratch space to avoid repeated allocations
-    static std::vector<Matrix> a;
-    static std::vector<Matrix> delta;
-    if (a.empty())
+    // Thread-local scratch space; reinit when architecture changes.
+    thread_local std::vector<Matrix> a;
+    thread_local std::vector<Matrix> delta;
+    if (!learn_buffers_match(a, weights, L))
         init_learn_buffers(a, delta, weights, L);
 
     // Copy input to activation buffer
@@ -566,21 +587,34 @@ std::istream& operator>>(std::istream& is, NeuralNet& nnet) {
 }
 
 /*
- * The method to classify/recognize a given input. Uses static buffers
- * to avoid allocations and fused operations for better performance.
+ * The method to classify/recognize a given input. Supports an arbitrary
+ * number of layers (matching learn) using thread-local activation
+ * scratch that is reallocated when the architecture changes.
  */
 Matrix NeuralNet::classify(const Matrix& inputs) const {
-    // Use static buffers to avoid repeated allocations. This assumes
-    // a two-layer network (input, hidden, then output).
-    static Matrix hidden(weights[0].height(), 1, Matrix::NoInit{});
+    const int L = static_cast<int>(weights.size());
+    if (L < 1)
+        return Matrix();
 
-    // Forward pass through first layer
-    gemv_rowplusbias_sigmoid(weights[0], biases[0], inputs, hidden);
+    thread_local std::vector<Matrix> a;
+    if (!learn_buffers_match(a, weights, L)) {
+        a.resize(static_cast<std::size_t>(L) + 1);
+        a[0] = Matrix(weights[0].width(), 1, Matrix::NoInit{});
+        for (int l = 1; l <= L; ++l) {
+            a[static_cast<std::size_t>(l)] =
+                Matrix(weights[static_cast<std::size_t>(l) - 1].height(), 1,
+                       Matrix::NoInit{});
+        }
+    }
 
-    // Forward pass through second layer and return result
-    Matrix out(weights[1].height(), 1, Matrix::NoInit{});
-    gemv_rowplusbias_sigmoid(weights[1], biases[1], hidden, out);
-    return out;
+    std::memcpy(&a[0][0][0], &inputs[0][0], a[0].height() * sizeof(double));
+    for (int l = 1; l <= L; ++l) {
+        gemv_rowplusbias_sigmoid(weights[static_cast<std::size_t>(l) - 1],
+                                 biases[static_cast<std::size_t>(l) - 1],
+                                 a[static_cast<std::size_t>(l) - 1],
+                                 a[static_cast<std::size_t>(l)]);
+    }
+    return a[static_cast<std::size_t>(L)];
 }
 
 #endif
