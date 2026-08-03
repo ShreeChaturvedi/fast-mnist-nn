@@ -96,7 +96,7 @@ class Matrix {
      *
      * \param[in] cols The number of cols to be created in the matrix.
      *
-     * \param[in] initVal The inital value to be set for each entry in
+     * \param[in] initVal The initial value to be set for each entry in
      * the matrix.
      */
     explicit Matrix(const size_t rows = 0, const size_t cols = 0,
@@ -190,7 +190,7 @@ class Matrix {
      *
      * \param[in] rhs The other matrix to be used.  This matrix must
      * have the same dimension as this matrix.  Otherwise this method
-     * throws an excpetion.
+     * throws an exception.
      *
      * \return The resulting matrix in which each value has been
      * computed by adding the corresponding values from \c this and
@@ -207,7 +207,7 @@ class Matrix {
      *
      * \param[in] rhs The other matrix to be used.  This matrix must
      * have the same dimension as this matrix.  Otherwise this method
-     * throws an excpetion.
+     * throws an exception.
      *
      * \return The resulting matrix in which each value has been
      * computed by multiplying the corresponding values from \c this
@@ -224,7 +224,7 @@ class Matrix {
      *
      * \param[in] rhs The other matrix to be used.  This matrix must
      * have the same dimension as this matrix.  Otherwise this method
-     * throws an excpetion.
+     * throws an exception.
      *
      * \return The resulting matrix in which each value has been
      * computed by multiplying the corresponding values from \c this
@@ -239,7 +239,7 @@ class Matrix {
      *
      * \param[in] rhs The other matrix to be used.  This matrix must
      * have the same dimension as this matrix.  Otherwise this method
-     * throws an excpetion.
+     * throws an exception.
      *
      * \return The resulting matrix in which each value has been
      * computed by subtracting the corresponding values from \c this
@@ -256,7 +256,7 @@ class Matrix {
      *
      * \param[in] rhs The other matrix to be used.  This matrix must
      * have the same number of rows as the number of columns in this
-     * matrix.  Otherwise this method throws an excpetion.
+     * matrix.  Otherwise this method throws an exception.
      *
      * \return The resulting matrix in which each value has been
      * computed by multiplying the corresponding values from \c this
