@@ -25,7 +25,7 @@ SIMD kernels, OpenMP, and reproducible benchmarks.
 - Doxygen docs target and clang-format config.
 - CI on Linux/macOS/Windows via GitHub Actions.
 
-## Quickstart
+## Quick Start
 
 ```sh
 python3 tools/run.py
